@@ -28,6 +28,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [loading, setLoading] = useState(true);
   const [selectedVariant, setSelectedVariant] = useState<string>('public');
   const [openVariantMenu, setOpenVariantMenu] = useState<string | null>(null);
+  const [openCopyMenu, setOpenCopyMenu] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string>('');
@@ -336,13 +337,51 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   {/* Overlay with actions */}
                   <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
                     <div className="flex space-x-2">
-                      <button
-                        onClick={() => copyToClipboard(imageUrl)}
-                        className="p-2 bg-white rounded-full text-gray-700 hover:text-blue-600 transition-colors"
-                        title="Copy URL"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(openCopyMenu === image.id ? null : image.id); }}
+                          className="p-2 bg-white rounded-full text-gray-700 hover:text-blue-600 transition-colors"
+                          title="Copy URL"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                        {openCopyMenu === image.id && (
+                          <>
+                            <div 
+                              className="fixed inset-0 bg-black bg-opacity-25 z-[99]"
+                              onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
+                            />
+                            <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100] text-sm text-gray-800 border">
+                              <div className="flex items-center justify-between p-3 border-b">
+                                <div className="text-sm font-medium">Copy Image URL</div>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
+                                  className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                                  title="Close"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                              <div className="p-3 max-h-80 overflow-auto">
+                                {Object.entries(getVariantUrls(image)).map(([variant, url]) => (
+                                  <div key={variant} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+                                    <div className="flex-1 min-w-0 mr-3">
+                                      <div className="text-xs font-mono font-semibold text-gray-900 capitalize">{variant}</div>
+                                      <div className="text-xs text-gray-500 truncate">{url}</div>
+                                    </div>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); copyToClipboard(url, variant); setOpenCopyMenu(null); }}
+                                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded text-xs font-medium flex-shrink-0"
+                                    >
+                                      Copy
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
                       <button
                         onClick={() => window.open(imageUrl, '_blank')}
                         className="p-2 bg-white rounded-full text-gray-700 hover:text-green-600 transition-colors"
@@ -370,11 +409,11 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                         {openVariantMenu === image.id && (
                           <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-50 text-sm text-gray-800">
                             <div className="flex items-center justify-between p-2 border-b">
-                              <div className="text-xs font-medium">Variants</div>
+                              <div className="text-xs font-medium">All Variants</div>
                               <div className="flex items-center space-x-2">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); const all = getVariantUrls(image); copyToClipboard(JSON.stringify(all, null, 2), 'All sizes'); }}
-                                  className="px-2 py-1 bg-gray-100 rounded text-xs"
+                                  className="px-2 py-1 bg-green-100 hover:bg-green-200 rounded text-xs"
                                   title="Copy all sizes as JSON"
                                 >
                                   Copy all
@@ -384,7 +423,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                                   className="px-2 py-1 bg-gray-100 rounded text-xs"
                                   title="Close"
                                 >
-                                  Close
+                                  ×
                                 </button>
                               </div>
                             </div>
@@ -394,14 +433,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                                   <span className="truncate mr-2 text-xs font-mono">{variant}</span>
                                   <div className="flex items-center space-x-1">
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); copyToClipboard(url, variant); }}
-                                      className="px-2 py-1 bg-gray-100 rounded text-xs"
-                                    >
-                                      Copy
-                                    </button>
-                                    <button
                                       onClick={(e) => { e.stopPropagation(); window.open(url, '_blank'); }}
-                                      className="px-2 py-1 bg-gray-100 rounded text-xs"
+                                      className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
                                     >
                                       Open
                                     </button>
@@ -474,13 +507,51 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   </div>
                   
                   <div className="flex space-x-2">
-                    <button
-                      onClick={() => copyToClipboard(imageUrl)}
-                      className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-                      title="Copy URL"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(openCopyMenu === image.id ? null : image.id); }}
+                        className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                        title="Copy URL"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      {openCopyMenu === image.id && (
+                        <>
+                          <div 
+                            className="fixed inset-0 bg-black bg-opacity-25 z-[99]"
+                            onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
+                          />
+                          <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100] text-sm text-gray-800 border">
+                            <div className="flex items-center justify-between p-3 border-b">
+                              <div className="text-sm font-medium">Copy Image URL</div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
+                                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                                title="Close"
+                              >
+                                ×
+                              </button>
+                            </div>
+                            <div className="p-3 max-h-80 overflow-auto">
+                              {Object.entries(getVariantUrls(image)).map(([variant, url]) => (
+                                <div key={variant} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+                                  <div className="flex-1 min-w-0 mr-3">
+                                    <div className="text-xs font-mono font-semibold text-gray-900 capitalize">{variant}</div>
+                                    <div className="text-xs text-gray-500 truncate">{url}</div>
+                                  </div>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(url, variant); setOpenCopyMenu(null); }}
+                                    className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded text-xs font-medium flex-shrink-0"
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                     <button
                       onClick={() => window.open(imageUrl, '_blank')}
                       className="p-2 text-gray-400 hover:text-green-600 transition-colors"
