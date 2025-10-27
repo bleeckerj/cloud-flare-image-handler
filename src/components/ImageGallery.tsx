@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { Trash2, Copy, ExternalLink, Layers } from 'lucide-react';
+import { Trash2, Copy, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
 import { getCloudflareImageUrl, getMultipleImageUrls } from '@/utils/imageUtils';
 import { useToast } from './Toast';
@@ -27,7 +27,6 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [images, setImages] = useState<CloudflareImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedVariant, setSelectedVariant] = useState<string>('public');
-  const [openVariantMenu, setOpenVariantMenu] = useState<string | null>(null);
   const [openCopyMenu, setOpenCopyMenu] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -324,149 +323,73 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               return (
                 <div
                   key={image.id}
-                  className="group relative bg-gray-100 rounded-lg overflow-hidden aspect-square"
+                  className="group bg-gray-100 rounded-lg overflow-hidden"
                 >
-                  <Image
-                    src={imageUrl}
-                    alt={image.filename}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                  />
-                  
-                  {/* Overlay with actions */}
-                  <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
-                    <div className="flex space-x-2">
-                      <div className="relative">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(openCopyMenu === image.id ? null : image.id); }}
-                          className="p-2 bg-white rounded-full text-gray-700 hover:text-blue-600 transition-colors"
-                          title="Copy URL"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </button>
-                        {openCopyMenu === image.id && (
-                          <>
-                            <div 
-                              className="fixed inset-0 bg-black bg-opacity-25 z-[99]"
-                              onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
-                            />
-                            <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100] text-sm text-gray-800 border">
-                              <div className="flex items-center justify-between p-3 border-b">
-                                <div className="text-sm font-medium">Copy Image URL</div>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
-                                  className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
-                                  title="Close"
-                                >
-                                  ×
-                                </button>
-                              </div>
-                              <div className="p-3 max-h-80 overflow-auto">
-                                {Object.entries(getVariantUrls(image)).map(([variant, url]) => (
-                                  <div key={variant} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
-                                    <div className="flex-1 min-w-0 mr-3">
-                                      <div className="text-xs font-mono font-semibold text-gray-900 capitalize">{variant}</div>
-                                      <div className="text-xs text-gray-500 truncate">{url}</div>
-                                    </div>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); copyToClipboard(url, variant); setOpenCopyMenu(null); }}
-                                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded text-xs font-medium flex-shrink-0"
-                                    >
-                                      Copy
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => window.open(imageUrl, '_blank')}
-                        className="p-2 bg-white rounded-full text-gray-700 hover:text-green-600 transition-colors"
-                        title="Open in new tab"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => startEdit(image)}
-                        className="p-2 bg-white rounded-full text-gray-700 hover:text-yellow-600 transition-colors"
-                        title="Edit folder/tags"
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <div className="relative">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setOpenVariantMenu(openVariantMenu === image.id ? null : image.id); }}
-                          className="p-2 bg-white rounded-full text-gray-700 hover:text-indigo-600 transition-colors"
-                          title="Variants"
-                        >
-                          <Layers className="h-4 w-4" />
-                        </button>
-                        {openVariantMenu === image.id && (
-                          <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-50 text-sm text-gray-800">
-                            <div className="flex items-center justify-between p-2 border-b">
-                              <div className="text-xs font-medium">All Variants</div>
-                              <div className="flex items-center space-x-2">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); const all = getVariantUrls(image); copyToClipboard(JSON.stringify(all, null, 2), 'All sizes'); }}
-                                  className="px-2 py-1 bg-green-100 hover:bg-green-200 rounded text-xs"
-                                  title="Copy all sizes as JSON"
-                                >
-                                  Copy all
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setOpenVariantMenu(null); }}
-                                  className="px-2 py-1 bg-gray-100 rounded text-xs"
-                                  title="Close"
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            </div>
-                            <div className="p-2 max-h-64 overflow-auto">
-                              {Object.entries(getVariantUrls(image)).map(([variant, url]) => (
-                                <div key={variant} className="flex items-center justify-between py-1">
-                                  <span className="truncate mr-2 text-xs font-mono">{variant}</span>
-                                  <div className="flex items-center space-x-1">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); window.open(url, '_blank'); }}
-                                      className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
-                                    >
-                                      Open
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => deleteImage(image.id)}
-                        className="p-2 bg-white rounded-full text-gray-700 hover:text-red-600 transition-colors"
-                        title="Delete image"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                  <div className="relative w-full aspect-square">
+                    <Image
+                      src={imageUrl}
+                      alt={image.filename}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    />
                   </div>
                   
-                  {/* Image info */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-3">
-                    <p className="text-white text-sm font-medium truncate">
+                  {/* Metadata footer (always visible, outside image) */}
+                  <div className="px-3 py-2 bg-white border-t border-gray-100">
+                    <p className="text-sm font-semibold text-gray-900 truncate" title={image.filename} style={{ lineHeight: '1.2' }}>
                       {image.filename}
                     </p>
-                    <div className="text-gray-300 text-xs space-y-1">
+                    <div className="text-gray-500 text-xs mt-1 space-y-0.5">
                       <p>{new Date(image.uploaded).toLocaleDateString()}</p>
-                      {image.folder && <p>📁 {image.folder}</p>}
-                      {image.tags && image.tags.length > 0 && (
+                      <p>📁 {image.folder ? image.folder : '[none]'}</p>
+                      {image.tags && image.tags.length > 0 ? (
                         <p>🏷️ {image.tags.slice(0, 2).join(', ')}{image.tags.length > 2 ? '...' : ''}</p>
+                      ) : (
+                        // Keep a blank line for alignment when tags are absent
+                        <p className="h-4">&nbsp;</p>
                       )}
+                      {/* description field is optional in CloudflareImage; omitted here */}
                     </div>
+                  </div>
+
+                  {/* Action bar below metadata to ensure icons are never obscured */}
+                  <div className="flex flex-wrap justify-center gap-2 py-2 bg-white border-b border-gray-200 z-30">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(openCopyMenu === image.id ? null : image.id); }}
+                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px]"
+                      title="Copy URL"
+                      aria-label="Copy URL"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => window.open(imageUrl, '_blank')}
+                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px]"
+                      title="Open in new tab"
+                      aria-label="Open in new tab"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => startEdit(image)}
+                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px]"
+                      title="Edit folder/tags"
+                      aria-label="Edit folder/tags"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    {/* Variants button removed — clipboard button opens the full-sheet modal */}
+                    <button
+                      onClick={() => deleteImage(image.id)}
+                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px]"
+                      title="Delete image"
+                      aria-label="Delete image"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               );
@@ -498,16 +421,14 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     <p className="text-sm text-gray-500">
                       {new Date(image.uploaded).toLocaleDateString()}
                     </p>
-                    {image.folder && (
-                      <p className="text-xs text-gray-500">📁 {image.folder}</p>
-                    )}
+                    <p className="text-xs text-gray-500">📁 {image.folder ? image.folder : '[none]'}</p>
                     {image.tags && image.tags.length > 0 && (
                       <p className="text-xs text-gray-500">🏷️ {image.tags.join(', ')}</p>
                     )}
                   </div>
                   
                   <div className="flex space-x-2">
-                    <div className="relative">
+                    <div>
                       <button
                         onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(openCopyMenu === image.id ? null : image.id); }}
                         className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
@@ -515,42 +436,6 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                       >
                         <Copy className="h-4 w-4" />
                       </button>
-                      {openCopyMenu === image.id && (
-                        <>
-                          <div 
-                            className="fixed inset-0 bg-black bg-opacity-25 z-[99]"
-                            onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
-                          />
-                          <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100] text-sm text-gray-800 border">
-                            <div className="flex items-center justify-between p-3 border-b">
-                              <div className="text-sm font-medium">Copy Image URL</div>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
-                                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
-                                title="Close"
-                              >
-                                ×
-                              </button>
-                            </div>
-                            <div className="p-3 max-h-80 overflow-auto">
-                              {Object.entries(getVariantUrls(image)).map(([variant, url]) => (
-                                <div key={variant} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
-                                  <div className="flex-1 min-w-0 mr-3">
-                                    <div className="text-xs font-mono font-semibold text-gray-900 capitalize">{variant}</div>
-                                    <div className="text-xs text-gray-500 truncate">{url}</div>
-                                  </div>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(url, variant); setOpenCopyMenu(null); }}
-                                    className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded text-xs font-medium flex-shrink-0"
-                                  >
-                                    Copy
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </>
-                      )}
                     </div>
                     <button
                       onClick={() => window.open(imageUrl, '_blank')}
@@ -582,6 +467,49 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           </div>
         )
       )}
+
+      {/* Global Copy Modal (works for grid and list) */}
+      {openCopyMenu && (() => {
+        const modalImage = images.find(i => i.id === openCopyMenu);
+        if (!modalImage) return null;
+        return (
+          <>
+              <div
+                className="fixed inset-0 bg-black/30 backdrop-blur-md z-[100000]"
+                style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any}
+                onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
+              />
+              <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100001] text-sm text-gray-800 border">
+              <div className="flex items-center justify-between p-3 border-b">
+                <div className="text-sm font-medium">Copy Image URL</div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
+                  className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                  title="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="p-3 max-h-80 overflow-auto">
+                {Object.entries(getVariantUrls(modalImage)).map(([variant, url]) => (
+                  <div key={variant} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+                    <div className="flex-1 min-w-0 mr-3">
+                      <div className="text-xs font-mono font-semibold text-gray-900 capitalize">{variant}</div>
+                      <div className="text-xs text-gray-500 truncate">{String(url)}</div>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); copyToClipboard(String(url), variant); setOpenCopyMenu(null); }}
+                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded text-xs font-medium flex-shrink-0"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Edit Modal */}
       {editingImage && (

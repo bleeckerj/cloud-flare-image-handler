@@ -13,6 +13,8 @@ interface UploadedImage {
   error?: string;
   folder?: string;
   tags?: string[];
+  description?: string;
+  originalUrl?: string;
 }
 
 interface ImageUploaderProps {
@@ -25,6 +27,8 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [newFolder, setNewFolder] = useState<string>('');
   const [tags, setTags] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [originalUrl, setOriginalUrl] = useState<string>('');
   const [folders, setFolders] = useState<string[]>(['email-campaigns', 'website-images', 'social-media', 'blog-posts']);
   const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
   
@@ -60,6 +64,12 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
         if (tags && tags.trim()) {
           formData.append('tags', tags.trim());
         }
+        if (description && description.trim()) {
+          formData.append('description', description.trim());
+        }
+        if (originalUrl && originalUrl.trim()) {
+          formData.append('originalUrl', originalUrl.trim());
+        }
         
         const response = await fetch('/api/upload', {
           method: 'POST',
@@ -76,7 +86,9 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
                   status: 'success', 
                   url: result.url,
                   folder: selectedFolder,
-                  tags: tags.trim() ? tags.trim().split(',').map(t => t.trim()) : []
+                  tags: tags.trim() ? tags.trim().split(',').map(t => t.trim()) : [],
+                  description: description || undefined,
+                  originalUrl: originalUrl || undefined
                 }
               : img
           ));
@@ -105,7 +117,14 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
     }
     
     setIsUploading(false);
-  }, [selectedFolder, tags, onImageUploaded]);
+    
+    // Clear form inputs after successful upload
+    setSelectedFolder('');
+    setNewFolder('');
+    setTags('');
+    setDescription('');
+    setOriginalUrl('');
+  }, [selectedFolder, tags, description, originalUrl, onImageUploaded]);
 
   // Handle drag and drop - either queue or upload immediately
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -229,6 +248,36 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
           />
           <p className="text-xs text-gray-500 mt-1">Separate tags with commas</p>
         </div>
+        
+        <div>
+          <label htmlFor="description-input" className="block text-sm font-medium text-gray-700 mb-2">
+            Description (Optional)
+          </label>
+          <textarea
+            id="description-input"
+            placeholder="Brief description of the image..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-vertical"
+          />
+          <p className="text-xs text-gray-500 mt-1">Optional description for the image</p>
+        </div>
+        
+        <div>
+          <label htmlFor="original-url-input" className="block text-sm font-medium text-gray-700 mb-2">
+            Original URL (Optional)
+          </label>
+          <input
+            id="original-url-input"
+            type="url"
+            placeholder="https://example.com/original-image.jpg"
+            value={originalUrl}
+            onChange={(e) => setOriginalUrl(e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="text-xs text-gray-500 mt-1">Reference to the original source URL</p>
+        </div>
       </div>
       
       <div
@@ -335,6 +384,12 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
                       <p className="text-xs text-gray-500">
                         📁 {image.folder}
                       </p>
+                    )}
+                    {image.description && (
+                      <p className="text-xs text-gray-500">📝 {image.description}</p>
+                    )}
+                    {image.originalUrl && (
+                      <p className="text-xs text-gray-500">🔗 <a href={image.originalUrl} target="_blank" rel="noreferrer" className="underline">Original</a></p>
                     )}
                     {image.tags && image.tags.length > 0 && (
                       <p className="text-xs text-gray-500">

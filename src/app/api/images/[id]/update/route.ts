@@ -18,7 +18,7 @@ export async function PATCH(
 
     const { id: imageId } = await params;
     const body = await request.json();
-    const { folder, tags } = body;
+    const { folder, tags, description, originalUrl } = body;
     
     if (!imageId) {
       return NextResponse.json(
@@ -30,11 +30,15 @@ export async function PATCH(
     // Clean up folder and tags
     const cleanFolder = folder && folder.trim() && folder !== 'undefined' ? folder.trim() : undefined;
     const cleanTags = tags && Array.isArray(tags) ? tags.filter((t: string) => t && t.trim()) : [];
+    const cleanDescription = description && description.trim() && description !== 'undefined' ? description.trim() : undefined;
+    const cleanOriginalUrl = originalUrl && originalUrl.trim() && originalUrl !== 'undefined' ? originalUrl.trim() : undefined;
 
     // Create updated metadata object (not JSON string)
     const metadata = {
       folder: cleanFolder,
       tags: cleanTags,
+      description: cleanDescription,
+      originalUrl: cleanOriginalUrl,
       updatedAt: new Date().toISOString()
     };
 
@@ -64,7 +68,9 @@ export async function PATCH(
     return NextResponse.json({ 
       success: true, 
       folder: cleanFolder, 
-      tags: cleanTags 
+      tags: cleanTags,
+      description: cleanDescription,
+      originalUrl: cleanOriginalUrl
     });
 
   } catch (error) {

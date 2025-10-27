@@ -52,6 +52,8 @@ export async function GET() {
       // Clean up folder and tags
       const cleanFolder = parsedMeta?.folder && parsedMeta.folder !== 'undefined' ? parsedMeta.folder : undefined;
       const cleanTags = Array.isArray(parsedMeta?.tags) ? parsedMeta.tags.filter((t: any) => t && t !== 'undefined') : [];
+      const cleanDescription = parsedMeta?.description && parsedMeta.description !== 'undefined' ? parsedMeta.description : undefined;
+      const cleanOriginalUrl = parsedMeta?.originalUrl && parsedMeta.originalUrl !== 'undefined' ? parsedMeta.originalUrl : undefined;
 
       return {
         id: image.id,
@@ -59,7 +61,9 @@ export async function GET() {
         uploaded: image.uploaded,
         variants: image.variants,
         folder: cleanFolder,
-        tags: cleanTags
+        tags: cleanTags,
+        description: cleanDescription,
+        originalUrl: cleanOriginalUrl
       };
     });
 

@@ -48,13 +48,17 @@ export async function POST(request: NextRequest) {
     const uploadFormData = new FormData();
     uploadFormData.append('file', new Blob([buffer], { type: file.type }), file.name);
     
-    // Get folder and tags from form data
+    // Get folder, tags, description, and originalUrl from form data
     const folder = formData.get('folder') as string;
     const tags = formData.get('tags') as string;
+    const description = formData.get('description') as string;
+    const originalUrl = formData.get('originalUrl') as string;
     
-    // Clean up folder value - handle empty strings and "undefined" strings
+    // Clean up values - handle empty strings and "undefined" strings
     const cleanFolder = folder && folder.trim() && folder !== 'undefined' ? folder.trim() : undefined;
     const cleanTags = tags && tags.trim() ? tags.trim().split(',').map(t => t.trim()).filter(t => t) : [];
+    const cleanDescription = description && description.trim() && description !== 'undefined' ? description.trim() : undefined;
+    const cleanOriginalUrl = originalUrl && originalUrl.trim() && originalUrl !== 'undefined' ? originalUrl.trim() : undefined;
 
     // Add metadata including organization info
     const metadata = JSON.stringify({
@@ -63,7 +67,9 @@ export async function POST(request: NextRequest) {
       size: file.size,
       type: file.type,
       folder: cleanFolder,
-      tags: cleanTags
+      tags: cleanTags,
+      description: cleanDescription,
+      originalUrl: cleanOriginalUrl
     });
     uploadFormData.append('metadata', metadata);
 
@@ -99,7 +105,9 @@ export async function POST(request: NextRequest) {
       variants: imageData.variants,
       uploaded: new Date().toISOString(),
       folder: cleanFolder,
-      tags: cleanTags
+      tags: cleanTags,
+      description: cleanDescription,
+      originalUrl: cleanOriginalUrl
     });
 
   } catch (error) {
