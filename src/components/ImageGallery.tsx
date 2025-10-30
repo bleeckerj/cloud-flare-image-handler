@@ -35,6 +35,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [editingImage, setEditingImage] = useState<string | null>(null);
   const [editFolder, setEditFolder] = useState<string>('');
   const [editTags, setEditTags] = useState<string>('');
+  const [editFolderSelect, setEditFolderSelect] = useState<string>('');
+  const [newEditFolder, setNewEditFolder] = useState<string>('');
 
   useEffect(() => {
     fetchImages();
@@ -85,25 +87,29 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 
   const startEdit = (image: CloudflareImage) => {
     setEditingImage(image.id);
-    setEditFolder(image.folder || '');
+    setEditFolderSelect(image.folder || '');
+    setNewEditFolder('');
     setEditTags(image.tags ? image.tags.join(', ') : '');
   };
 
   const cancelEdit = () => {
     setEditingImage(null);
-    setEditFolder('');
+    setEditFolderSelect('');
+    setNewEditFolder('');
     setEditTags('');
   };
 
   const saveEdit = async (imageId: string) => {
     try {
+      const finalFolder = editFolderSelect === '__create__' ? (newEditFolder.trim() || undefined) : (editFolderSelect === '' ? undefined : editFolderSelect);
+
       const response = await fetch(`/api/images/${imageId}/update`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          folder: editFolder.trim() || undefined,
+          folder: finalFolder,
           tags: editTags.trim() ? editTags.split(',').map(t => t.trim()) : []
         })
       });
@@ -114,7 +120,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           img.id === imageId 
             ? { 
                 ...img, 
-                folder: editFolder.trim() || undefined,
+                folder: finalFolder,
                 tags: editTags.trim() ? editTags.split(',').map(t => t.trim()) : []
               }
             : img
@@ -357,15 +363,15 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   <div className="flex flex-wrap justify-center gap-2 py-2 bg-white border-b border-gray-200 z-30">
                     <button
                       onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(openCopyMenu === image.id ? null : image.id); }}
-                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px]"
+                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px] cursor-pointer transition-transform transform hover:scale-105 active:scale-95 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black/40"
                       title="Copy URL"
                       aria-label="Copy URL"
                     >
                       <Copy className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => window.open(imageUrl, '_blank')}
-                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px]"
+                      onClick={() => window.open(`/images/${image.id}`, '_blank')}
+                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px] cursor-pointer transition-transform transform hover:scale-105 active:scale-95 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black/40"
                       title="Open in new tab"
                       aria-label="Open in new tab"
                     >
@@ -373,7 +379,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     </button>
                     <button
                       onClick={() => startEdit(image)}
-                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px]"
+                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px] cursor-pointer transition-transform transform hover:scale-105 active:scale-95 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black/40"
                       title="Edit folder/tags"
                       aria-label="Edit folder/tags"
                     >
@@ -384,7 +390,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     {/* Variants button removed — clipboard button opens the full-sheet modal */}
                     <button
                       onClick={() => deleteImage(image.id)}
-                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px]"
+                      className="inline-flex items-center gap-2 bg-black text-white rounded-full px-3 py-1.5 text-xs shadow-sm min-h-[36px] min-w-[36px] cursor-pointer transition-transform transform hover:scale-105 active:scale-95 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black/40"
                       title="Delete image"
                       aria-label="Delete image"
                     >
@@ -431,22 +437,22 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     <div>
                       <button
                         onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(openCopyMenu === image.id ? null : image.id); }}
-                        className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                        className="p-2 text-gray-400 hover:text-blue-600 transition-colors cursor-pointer transition-transform transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
                         title="Copy URL"
                       >
                         <Copy className="h-4 w-4" />
                       </button>
                     </div>
                     <button
-                      onClick={() => window.open(imageUrl, '_blank')}
-                      className="p-2 text-gray-400 hover:text-green-600 transition-colors"
+                      onClick={() => window.open(`/images/${image.id}`, '_blank')}
+                      className="p-2 text-gray-400 hover:text-green-600 transition-colors cursor-pointer transition-transform transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-300"
                       title="Open in new tab"
                     >
                       <ExternalLink className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => startEdit(image)}
-                      className="p-2 text-gray-400 hover:text-yellow-600 transition-colors"
+                      className="p-2 text-gray-400 hover:text-yellow-600 transition-colors cursor-pointer transition-transform transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-300"
                       title="Edit folder/tags"
                     >
                       <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -455,7 +461,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     </button>
                     <button
                       onClick={() => deleteImage(image.id)}
-                      className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                      className="p-2 text-gray-400 hover:text-red-600 transition-colors cursor-pointer transition-transform transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-300"
                       title="Delete image"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -499,7 +505,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); copyToClipboard(String(url), variant); setOpenCopyMenu(null); }}
-                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 rounded text-xs font-medium flex-shrink-0"
+                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-xs font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
                     >
                       Copy
                     </button>
@@ -524,26 +530,29 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 <label htmlFor="edit-folder" className="block text-sm font-medium text-gray-700 mb-1">
                   Folder
                 </label>
-                <input
-                  id="edit-folder"
-                  type="text"
-                  list="folder-options"
-                  placeholder="Type folder name or select existing"
-                  value={editFolder}
-                  onChange={(e) => setEditFolder(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <datalist id="folder-options">
-                  <option value="" />
-                  <option value="email-campaigns" />
-                  <option value="website-images" />
-                  <option value="social-media" />
-                  <option value="blog-posts" />
-                  {uniqueFolders.map(folder => (
-                    <option key={folder} value={folder} />
-                  ))}
-                </datalist>
-                <p className="text-xs text-gray-500 mt-1">Type a new folder name or select from existing ones</p>
+                <div>
+                  <select
+                    id="edit-folder"
+                    value={editFolderSelect}
+                    onChange={(e) => setEditFolderSelect(e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">[none]</option>
+                    {uniqueFolders.map(folder => (
+                      <option key={folder} value={folder}>{folder}</option>
+                    ))}
+                    <option value="__create__">Create new folder…</option>
+                  </select>
+                  {editFolderSelect === '__create__' && (
+                    <input
+                      value={newEditFolder}
+                      onChange={(e) => setNewEditFolder(e.target.value)}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-2"
+                      placeholder="Type new folder name"
+                    />
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Select existing folder or create a new one</p>
               </div>
               
               <div>
