@@ -115,3 +115,83 @@ export function getCustomImageUrl(
   const variantString = params.toString();
   return getCloudflareImageUrl(imageId, variantString, accountHash);
 }
+
+/**
+ * Common aspect ratios for easy recognition
+ */
+export const COMMON_ASPECT_RATIOS = [
+  { ratio: 16/9, name: '16:9' },
+  { ratio: 4/3, name: '4:3' },
+  { ratio: 3/2, name: '3:2' },
+  { ratio: 1/1, name: '1:1' },
+  { ratio: 2/3, name: '2:3' },
+  { ratio: 3/4, name: '3:4' },
+  { ratio: 9/16, name: '9:16' },
+  { ratio: 5/4, name: '5:4' },
+  { ratio: 21/9, name: '21:9' },
+];
+
+/**
+ * Calculate aspect ratio from width and height
+ * @param width - Image width in pixels
+ * @param height - Image height in pixels
+ * @returns Object with decimal ratio and nearest common ratio name
+ */
+export function calculateAspectRatio(width: number, height: number): {
+  decimal: number;
+  common: string;
+  dimensions: { width: number; height: number };
+} {
+  const decimal = width / height;
+  
+  // Find the closest common aspect ratio
+  let closestRatio = COMMON_ASPECT_RATIOS[0];
+  let smallestDifference = Math.abs(decimal - closestRatio.ratio);
+  
+  for (const commonRatio of COMMON_ASPECT_RATIOS) {
+    const difference = Math.abs(decimal - commonRatio.ratio);
+    if (difference < smallestDifference) {
+      smallestDifference = difference;
+      closestRatio = commonRatio;
+    }
+  }
+  
+  // If the difference is very small (within 0.05), use the common ratio
+  // Otherwise, create a custom ratio string
+  const threshold = 0.05;
+  const ratioName = smallestDifference < threshold 
+    ? closestRatio.name 
+    : `${Math.round(width/10)}:${Math.round(height/10)}`;
+  
+  return {
+    decimal,
+    common: ratioName,
+    dimensions: { width, height }
+  };
+}
+
+/**
+ * Load an image and return its dimensions
+ * @param imageUrl - The image URL to load
+ * @returns Promise with image dimensions
+ */
+export function getImageDimensions(imageUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth,
+        height: img.naturalHeight
+      });
+    };
+    
+    img.onerror = () => {
+      reject(new Error(`Failed to load image: ${imageUrl}`));
+    };
+    
+    // Set crossOrigin to handle CORS for Cloudflare Images
+    img.crossOrigin = 'anonymous';
+    img.src = imageUrl;
+  });
+}

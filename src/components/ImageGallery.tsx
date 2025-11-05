@@ -5,6 +5,8 @@ import { Trash2, Copy, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
 import { getCloudflareImageUrl, getMultipleImageUrls } from '@/utils/imageUtils';
 import { useToast } from './Toast';
+import { useImageAspectRatio } from '@/hooks/useImageAspectRatio';
+import HoverPreview from './HoverPreview';
 
 interface CloudflareImage {
   id: string;
@@ -13,6 +15,8 @@ interface CloudflareImage {
   variants: string[];
   folder?: string;
   tags?: string[];
+  aspectRatio?: string;
+  dimensions?: { width: number; height: number };
 }
 
 interface ImageGalleryProps {
@@ -37,6 +41,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [editTags, setEditTags] = useState<string>('');
   const [editFolderSelect, setEditFolderSelect] = useState<string>('');
   const [newEditFolder, setNewEditFolder] = useState<string>('');
+  
+  // Hover preview state
+  const [hoveredImage, setHoveredImage] = useState<string | null>(null);
+  const [hoverTimeout, setHoverTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     fetchImages();
@@ -48,6 +58,15 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       fetchImages(true); // Silent refresh
     }
   }, [refreshTrigger]);
+
+  // Cleanup hover timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeout) {
+        clearTimeout(hoverTimeout);
+      }
+    };
+  }, [hoverTimeout]);
 
   // Expose the refresh function via ref
   useImperativeHandle(ref, () => ({
@@ -169,9 +188,61 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     }
   };
 
-  const getImageUrl = (image: CloudflareImage, variant: string = 'public') => {
+  // Hover preview handlers
+  const handleMouseEnter = (imageId: string, event: React.MouseEvent) => {
+    // Clear any existing timeout
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout);
+    }
+
+    setHoveredImage(imageId);
+    setMousePosition({ x: event.clientX, y: event.clientY });
+
+    // Set timeout for 800ms before showing preview
+    const timeout = setTimeout(() => {
+      setShowPreview(true);
+    }, 800);
+
+    setHoverTimeout(timeout);
+  };
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    setMousePosition({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleMouseLeave = () => {
+    // Clear timeout and hide preview
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout);
+      setHoverTimeout(null);
+    }
+    
+    setHoveredImage(null);
+    setShowPreview(false);
+  };
+
+  const getImageUrl = (image: CloudflareImage, variant: string) => {
     // Use the utility function with the variant string directly
     return getCloudflareImageUrl(image.id, variant === 'public' ? 'original' : variant);
+  };
+
+  // Component for displaying aspect ratio
+  const AspectRatioDisplay: React.FC<{ imageId: string }> = ({ imageId }) => {
+    const { aspectRatio, loading, error } = useImageAspectRatio(imageId);
+
+    if (loading) {
+      return (
+        <p className="text-xs text-gray-400">
+          📐 <span className="inline-block w-8 h-2 bg-gray-200 rounded animate-pulse"></span>
+        </p>
+      );
+    }
+
+    if (error || !aspectRatio) {
+      return <p className="text-xs text-gray-400">📐 --</p>;
+    }
+
+    return <p className="text-xs text-gray-500">📐 {aspectRatio}</p>;
   };
 
   const VARIANT_PRESETS = ['small', 'medium', 'large', 'xlarge', 'original', 'thumbnail'];
@@ -331,7 +402,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   key={image.id}
                   className="group bg-gray-100 rounded-lg overflow-hidden"
                 >
-                  <div className="relative w-full aspect-square">
+                  <div 
+                    className="relative w-full aspect-square cursor-pointer"
+                    onMouseEnter={(e) => handleMouseEnter(image.id, e)}
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                  >
                     <Image
                       src={imageUrl}
                       alt={image.filename}
@@ -349,6 +425,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     <div className="text-gray-500 text-xs mt-1 space-y-0.5">
                       <p>{new Date(image.uploaded).toLocaleDateString()}</p>
                       <p>📁 {image.folder ? image.folder : '[none]'}</p>
+                      <AspectRatioDisplay imageId={image.id} />
                       {image.tags && image.tags.length > 0 ? (
                         <p>🏷️ {image.tags.slice(0, 2).join(', ')}{image.tags.length > 2 ? '...' : ''}</p>
                       ) : (
@@ -410,7 +487,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   key={image.id}
                   className="flex items-center space-x-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
                 >
-                  <div className="w-16 h-16 relative bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                  <div 
+                    className="w-16 h-16 relative bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer"
+                    onMouseEnter={(e) => handleMouseEnter(image.id, e)}
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                  >
                     <Image
                       src={imageUrl}
                       alt={image.filename}
@@ -428,6 +510,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                       {new Date(image.uploaded).toLocaleDateString()}
                     </p>
                     <p className="text-xs text-gray-500">📁 {image.folder ? image.folder : '[none]'}</p>
+                    <div className="text-xs text-gray-500">
+                      <AspectRatioDisplay imageId={image.id} />
+                    </div>
                     {image.tags && image.tags.length > 0 && (
                       <p className="text-xs text-gray-500">🏷️ {image.tags.join(', ')}</p>
                     )}
@@ -587,6 +672,18 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             </div>
           </div>
         </div>
+      )}
+
+      {/* Hover Preview */}
+      {hoveredImage && showPreview && (
+        <HoverPreview
+          imageId={hoveredImage}
+          filename={images.find(img => img.id === hoveredImage)?.filename || 'Unknown'}
+          isVisible={showPreview}
+          mousePosition={mousePosition}
+          onClose={handleMouseLeave}
+          dimensions={images.find(img => img.id === hoveredImage)?.dimensions}
+        />
       )}
     </div>
   );
