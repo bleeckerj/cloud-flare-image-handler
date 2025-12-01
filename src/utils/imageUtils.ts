@@ -124,6 +124,7 @@ export const COMMON_ASPECT_RATIOS = [
   { ratio: 4/3, name: '4:3' },
   { ratio: 3/2, name: '3:2' },
   { ratio: 1/1, name: '1:1' },
+  { ratio: 4/5, name: '4:5' },
   { ratio: 2/3, name: '2:3' },
   { ratio: 3/4, name: '3:4' },
   { ratio: 9/16, name: '9:16' },

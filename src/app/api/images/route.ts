@@ -54,6 +54,7 @@ export async function GET() {
       const cleanTags = Array.isArray(parsedMeta?.tags) ? parsedMeta.tags.filter((t: any) => t && t !== 'undefined') : [];
       const cleanDescription = parsedMeta?.description && parsedMeta.description !== 'undefined' ? parsedMeta.description : undefined;
       const cleanOriginalUrl = parsedMeta?.originalUrl && parsedMeta.originalUrl !== 'undefined' ? parsedMeta.originalUrl : undefined;
+      const cleanAltTag = parsedMeta?.altTag && parsedMeta.altTag !== 'undefined' ? parsedMeta.altTag : undefined;
 
       return {
         id: image.id,
@@ -63,7 +64,8 @@ export async function GET() {
         folder: cleanFolder,
         tags: cleanTags,
         description: cleanDescription,
-        originalUrl: cleanOriginalUrl
+        originalUrl: cleanOriginalUrl,
+        altTag: cleanAltTag
       };
     });
 

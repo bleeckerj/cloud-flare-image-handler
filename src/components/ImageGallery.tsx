@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { Trash2, Copy, ExternalLink } from 'lucide-react';
+import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from 'react';
+import { Trash2, Copy, ExternalLink, Sparkles } from 'lucide-react';
 import Image from 'next/image';
 import { getCloudflareImageUrl, getMultipleImageUrls } from '@/utils/imageUtils';
 import { useToast } from './Toast';
@@ -17,6 +17,7 @@ interface CloudflareImage {
   tags?: string[];
   aspectRatio?: string;
   dimensions?: { width: number; height: number };
+  altTag?: string;
 }
 
 interface ImageGalleryProps {
@@ -27,6 +28,8 @@ export interface ImageGalleryRef {
   refreshImages: () => void;
 }
 
+const PAGE_SIZE = 12;
+
 const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTrigger }, ref) => {
   const [images, setImages] = useState<CloudflareImage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,11 +39,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [currentPage, setCurrentPage] = useState(1);
   const [editingImage, setEditingImage] = useState<string | null>(null);
   const [editFolder, setEditFolder] = useState<string>('');
   const [editTags, setEditTags] = useState<string>('');
   const [editFolderSelect, setEditFolderSelect] = useState<string>('');
   const [newEditFolder, setNewEditFolder] = useState<string>('');
+  const [altLoadingMap, setAltLoadingMap] = useState<Record<string, boolean>>({});
   
   // Hover preview state
   const [hoveredImage, setHoveredImage] = useState<string | null>(null);
@@ -101,6 +106,39 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       }
     } catch (error) {
       console.error('Failed to delete image:', error);
+    }
+  };
+
+  const generateAltTag = async (imageId: string) => {
+    setAltLoadingMap(prev => ({ ...prev, [imageId]: true }));
+    try {
+      const response = await fetch(`/api/images/${imageId}/alt`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        const message = typeof data?.error === 'string' ? data.error : 'Failed to generate ALT text';
+        toast.push(message);
+        return;
+      }
+
+      if (!data?.altTag) {
+        toast.push('ALT text response was empty');
+        return;
+      }
+
+      setImages(prev => prev.map(img => (img.id === imageId ? { ...img, altTag: data.altTag } : img)));
+      toast.push('ALT text updated');
+    } catch (error) {
+      console.error('Failed to generate ALT text:', error);
+      toast.push('Failed to generate ALT text');
+    } finally {
+      setAltLoadingMap(prev => {
+        const next = { ...prev };
+        delete next[imageId];
+        return next;
+      });
     }
   };
 
@@ -226,6 +264,47 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     return getCloudflareImageUrl(image.id, variant === 'public' ? 'original' : variant);
   };
 
+  // Helper function to get orientation icon based on aspect ratio
+  const getOrientationIcon = (aspectRatioString: string) => {
+    // Parse the aspect ratio to determine orientation
+    const parts = aspectRatioString.split(':');
+    if (parts.length === 2) {
+      const width = parseFloat(parts[0]);
+      const height = parseFloat(parts[1]);
+      const ratio = width / height;
+      
+      if (Math.abs(ratio - 1) < 0.1) {
+        // Square (1:1 or close)
+        return (
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className="inline-block">
+            <rect x="1" y="1" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="0.8"/>
+          </svg>
+        );
+      } else if (ratio > 1) {
+        // Landscape (wider than tall)
+        return (
+          <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor" className="inline-block">
+            <rect x="1" y="1" width="8" height="4" fill="none" stroke="currentColor" strokeWidth="0.8"/>
+          </svg>
+        );
+      } else {
+        // Portrait (taller than wide)
+        return (
+          <svg width="6" height="10" viewBox="0 0 6 10" fill="currentColor" className="inline-block">
+            <rect x="1" y="1" width="4" height="8" fill="none" stroke="currentColor" strokeWidth="0.8"/>
+          </svg>
+        );
+      }
+    }
+    
+    // Default to square if we can't parse
+    return (
+      <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className="inline-block">
+        <rect x="1" y="1" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="0.8"/>
+      </svg>
+    );
+  };
+
   // Component for displaying aspect ratio
   const AspectRatioDisplay: React.FC<{ imageId: string }> = ({ imageId }) => {
     const { aspectRatio, loading, error } = useImageAspectRatio(imageId);
@@ -242,7 +321,11 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       return <p className="text-xs text-gray-400">📐 --</p>;
     }
 
-    return <p className="text-xs text-gray-500">📐 {aspectRatio}</p>;
+    return (
+      <p className="text-xs text-gray-500 flex items-center gap-1">
+        📐 {aspectRatio} {getOrientationIcon(aspectRatio)}
+      </p>
+    );
   };
 
   const VARIANT_PRESETS = ['small', 'medium', 'large', 'xlarge', 'original', 'thumbnail'];
@@ -251,30 +334,83 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     return getMultipleImageUrls(image.id, VARIANT_PRESETS);
   };
 
-  // Get unique folders and tags for filtering
-  const uniqueFolders = Array.from(new Set(images.filter(img => img.folder && img.folder.trim()).map(img => img.folder)));
-  const uniqueTags = Array.from(new Set(images.flatMap(img => Array.isArray(img.tags) ? img.tags.filter(tag => tag && tag.trim()) : [])));
-  
-  // Debug: Log folders and tags
-  console.log('Unique folders found:', uniqueFolders);
-  console.log('Unique tags found:', uniqueTags);
-  console.log('Total images:', images.length);
+  const uniqueFolders = useMemo(
+    () => Array.from(new Set(images.filter(img => img.folder && img.folder.trim()).map(img => img.folder))),
+    [images]
+  );
 
-  // Filter images based on search and selections
-  const filteredImages = images.filter(image => {
-    const matchesFolder = selectedFolder === 'all' || 
-      (selectedFolder === 'no-folder' && !image.folder) ||
-      image.folder === selectedFolder;
-    
-    const matchesTag = !selectedTag || (image.tags && image.tags.includes(selectedTag));
-    
-    const matchesSearch = !searchTerm || 
-      image.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (image.tags && image.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))) ||
-      (image.folder && image.folder.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    return matchesFolder && matchesTag && matchesSearch;
-  });
+  const uniqueTags = useMemo(
+    () => Array.from(new Set(images.flatMap(img => Array.isArray(img.tags) ? img.tags.filter(tag => tag && tag.trim()) : []))),
+    [images]
+  );
+
+  const filteredImages = useMemo(() => {
+    return images.filter(image => {
+      const matchesFolder = selectedFolder === 'all' ||
+        (selectedFolder === 'no-folder' && !image.folder) ||
+        image.folder === selectedFolder;
+
+      const matchesTag = !selectedTag || (image.tags && image.tags.includes(selectedTag));
+
+      const matchesSearch = !searchTerm ||
+        image.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (image.tags && image.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))) ||
+        (image.folder && image.folder.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      return matchesFolder && matchesTag && matchesSearch;
+    });
+  }, [images, selectedFolder, selectedTag, searchTerm]);
+
+  const sortedImages = useMemo(() => {
+    return [...filteredImages].sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
+  }, [filteredImages]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedImages.length / PAGE_SIZE));
+  const pageIndex = Math.min(currentPage, totalPages);
+  const pageSliceStart = (pageIndex - 1) * PAGE_SIZE;
+  const pageImages = sortedImages.slice(pageSliceStart, pageSliceStart + PAGE_SIZE);
+  const showPagination = sortedImages.length > PAGE_SIZE;
+  const hasResults = sortedImages.length > 0;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedFolder, selectedTag, searchTerm]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const formatDateRangeLabel = (items: CloudflareImage[]) => {
+    if (!items.length) return null;
+
+    const formatDate = (value: string) =>
+      new Date(value).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+
+    const newestLabel = formatDate(items[0].uploaded);
+    const oldestLabel = formatDate(items[items.length - 1].uploaded);
+
+    return newestLabel === oldestLabel ? newestLabel : `${newestLabel} - ${oldestLabel}`;
+  };
+
+  const getPageDateRangeLabel = (pageNumber: number) => {
+    if (pageNumber < 1 || pageNumber > totalPages) return null;
+    const startIndex = (pageNumber - 1) * PAGE_SIZE;
+    const slice = sortedImages.slice(startIndex, startIndex + PAGE_SIZE);
+    return formatDateRangeLabel(slice);
+  };
+
+  const currentPageRangeLabel = formatDateRangeLabel(pageImages);
+  const prevPageRangeLabel = getPageDateRangeLabel(pageIndex - 1);
+  const nextPageRangeLabel = getPageDateRangeLabel(pageIndex + 1);
+
+  const goToPreviousPage = () => setCurrentPage(prev => Math.max(1, prev - 1));
+  const goToNextPage = () => setCurrentPage(prev => Math.min(totalPages, prev + 1));
 
   if (loading) {
     return (
@@ -293,92 +429,123 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold text-gray-900">
-          Image Gallery ({filteredImages.length}/{images.length})
-        </h2>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md"
-          >
-            {viewMode === 'grid' ? '📋 List' : '🔲 Grid'}
-          </button>
+      <div className="sticky top-0 z-20 -m-6 mb-6 p-6 pb-4 bg-white/95 backdrop-blur rounded-t-lg border-b border-gray-100">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              Image Gallery ({filteredImages.length}/{images.length})
+            </h2>
+            {showPagination && currentPageRangeLabel && (
+              <p className="text-sm text-gray-500">
+                Showing uploads from {currentPageRangeLabel}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {showPagination && (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <button
+                  onClick={goToPreviousPage}
+                  disabled={pageIndex === 1}
+                  className="px-3 py-1 border rounded-md disabled:opacity-40"
+                  title={prevPageRangeLabel ? `Previous (${prevPageRangeLabel})` : 'Previous page'}
+                >
+                  Prev
+                </button>
+                <span>
+                  Page {pageIndex} / {totalPages}
+                </span>
+                <button
+                  onClick={goToNextPage}
+                  disabled={pageIndex === totalPages}
+                  className="px-3 py-1 border rounded-md disabled:opacity-40"
+                  title={nextPageRangeLabel ? `Next (${nextPageRangeLabel})` : 'Next page'}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+            <button
+              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md"
+            >
+              {viewMode === 'grid' ? '📋 List' : '🔲 Grid'}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div>
+            <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-1">
+              Search
+            </label>
+            <input
+              id="search"
+              type="text"
+              placeholder="Search files, tags, folders..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="folder-filter" className="block text-sm font-medium text-gray-700 mb-1">
+              Folder
+            </label>
+            <select
+              id="folder-filter"
+              value={selectedFolder}
+              onChange={(e) => setSelectedFolder(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All folders</option>
+              <option value="no-folder">No folder</option>
+              {uniqueFolders.map(folder => (
+                <option key={folder} value={folder}>{folder}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div>
+            <label htmlFor="tag-filter" className="block text-sm font-medium text-gray-700 mb-1">
+              Tag
+            </label>
+            <select
+              id="tag-filter"
+              value={selectedTag}
+              onChange={(e) => setSelectedTag(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All tags</option>
+              {uniqueTags.map(tag => (
+                <option key={tag} value={tag}>{tag}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div>
+            <label htmlFor="variant-select" className="block text-sm font-medium text-gray-700 mb-1">
+              Image Size
+            </label>
+            <select
+              id="variant-select"
+              value={selectedVariant}
+              onChange={(e) => setSelectedVariant(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="public">Original (Full Size)</option>
+              <option value="w=300">Small (300px)</option>
+              <option value="w=600">Medium (600px)</option>
+              <option value="w=900">Large (900px)</option>
+              <option value="w=1230">X-Large (1230px)</option>
+              <option value="thumbnail">Thumbnail (preset)</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* Search and Filter Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
-        <div>
-          <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-1">
-            Search
-          </label>
-          <input
-            id="search"
-            type="text"
-            placeholder="Search files, tags, folders..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        
-        <div>
-          <label htmlFor="folder-filter" className="block text-sm font-medium text-gray-700 mb-1">
-            Folder
-          </label>
-          <select
-            id="folder-filter"
-            value={selectedFolder}
-            onChange={(e) => setSelectedFolder(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All folders</option>
-            <option value="no-folder">No folder</option>
-            {uniqueFolders.map(folder => (
-              <option key={folder} value={folder}>{folder}</option>
-            ))}
-          </select>
-        </div>
-        
-        <div>
-          <label htmlFor="tag-filter" className="block text-sm font-medium text-gray-700 mb-1">
-            Tag
-          </label>
-          <select
-            id="tag-filter"
-            value={selectedTag}
-            onChange={(e) => setSelectedTag(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All tags</option>
-            {uniqueTags.map(tag => (
-              <option key={tag} value={tag}>{tag}</option>
-            ))}
-          </select>
-        </div>
-        
-        <div>
-          <label htmlFor="variant-select" className="block text-sm font-medium text-gray-700 mb-1">
-            Image Size
-          </label>
-          <select
-            id="variant-select"
-            value={selectedVariant}
-            onChange={(e) => setSelectedVariant(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="public">Original (Full Size)</option>
-            <option value="w=300">Small (300px)</option>
-            <option value="w=600">Medium (600px)</option>
-            <option value="w=900">Large (900px)</option>
-            <option value="w=1230">X-Large (1230px)</option>
-            <option value="thumbnail">Thumbnail (preset)</option>
-          </select>
-        </div>
-      </div>
-
-      {filteredImages.length === 0 ? (
+      {!hasResults ? (
         <div className="text-center py-12">
           <div className="text-gray-400 mb-2">
             <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -395,7 +562,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       ) : (
         viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filteredImages.map((image) => {
+            {pageImages.map((image) => {
               const imageUrl = getImageUrl(image, selectedVariant);
               return (
                 <div
@@ -429,11 +596,23 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                       {image.tags && image.tags.length > 0 ? (
                         <p>🏷️ {image.tags.slice(0, 2).join(', ')}{image.tags.length > 2 ? '...' : ''}</p>
                       ) : (
-                        // Keep a blank line for alignment when tags are absent
-                        <p className="h-4">&nbsp;</p>
+                        <p className="text-gray-400">🏷️ [no tags]</p>
                       )}
-                      {/* description field is optional in CloudflareImage; omitted here */}
+                      <p
+                        className={`text-xs leading-snug ${image.altTag ? 'text-gray-600' : 'text-gray-400 italic'}`}
+                        title={image.altTag || undefined}
+                      >
+                        {image.altTag ? `📝 ${image.altTag}` : 'No ALT text yet'}
+                      </p>
                     </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); generateAltTag(image.id); }}
+                      disabled={Boolean(altLoadingMap[image.id])}
+                      className="mt-2 w-full inline-flex items-center justify-center gap-2 bg-gray-900 text-white rounded-md px-3 py-1.5 text-xs transition hover:bg-black disabled:opacity-50"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {altLoadingMap[image.id] ? 'Generating ALT...' : image.altTag ? 'Refresh ALT text' : 'Generate ALT text'}
+                    </button>
                   </div>
 
                   {/* Action bar below metadata to ensure icons are never obscured */}
@@ -480,7 +659,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredImages.map((image) => {
+            {pageImages.map((image) => {
               const imageUrl = getImageUrl(image, selectedVariant);
               return (
                 <div
@@ -513,9 +692,25 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     <div className="text-xs text-gray-500">
                       <AspectRatioDisplay imageId={image.id} />
                     </div>
-                    {image.tags && image.tags.length > 0 && (
+                    {image.tags && image.tags.length > 0 ? (
                       <p className="text-xs text-gray-500">🏷️ {image.tags.join(', ')}</p>
+                    ) : (
+                      <p className="text-xs text-gray-400">🏷️ [no tags]</p>
                     )}
+                    <p
+                      className={`text-xs mt-1 ${image.altTag ? 'text-gray-600' : 'text-gray-400 italic'}`}
+                      title={image.altTag || undefined}
+                    >
+                      {image.altTag ? `📝 ${image.altTag}` : 'No ALT text yet'}
+                    </p>
+                    <button
+                      onClick={() => generateAltTag(image.id)}
+                      disabled={Boolean(altLoadingMap[image.id])}
+                      className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {altLoadingMap[image.id] ? 'Generating ALT...' : image.altTag ? 'Refresh ALT text' : 'Generate ALT text'}
+                    </button>
                   </div>
                   
                   <div className="flex space-x-2">
@@ -557,6 +752,35 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             })}
           </div>
         )
+      )}
+
+      {showPagination && hasResults && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-6 text-sm text-gray-600 border-t border-gray-100 pt-4">
+          <div>
+            {currentPageRangeLabel && (
+              <p>Currently viewing uploads from {currentPageRangeLabel}</p>
+            )}
+            <p className="text-xs text-gray-400">Page {pageIndex} of {totalPages}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goToPreviousPage}
+              disabled={pageIndex === 1}
+              className="px-3 py-1.5 border rounded-md disabled:opacity-40"
+              title={prevPageRangeLabel ? `Previous (${prevPageRangeLabel})` : 'Previous page'}
+            >
+              Previous
+            </button>
+            <button
+              onClick={goToNextPage}
+              disabled={pageIndex === totalPages}
+              className="px-3 py-1.5 border rounded-md disabled:opacity-40"
+              title={nextPageRangeLabel ? `Next (${nextPageRangeLabel})` : 'Next page'}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Global Copy Modal (works for grid and list) */}
@@ -626,7 +850,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     {uniqueFolders.map(folder => (
                       <option key={folder} value={folder}>{folder}</option>
                     ))}
-                    <option value="__create__">Create new folder…</option>
+                    <option value="__create__">Create new folder...</option>
                   </select>
                   {editFolderSelect === '__create__' && (
                     <input
