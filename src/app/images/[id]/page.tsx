@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { getMultipleImageUrls, getCloudflareImageUrl } from '@/utils/imageUtils';
 import { useToast } from '@/components/Toast';
 
@@ -25,7 +26,6 @@ export default function ImageDetailPage({ params: { id } }: Params) {
   const [loading, setLoading] = useState(true);
   const toast = useToast();
 
-  const [folderInput, setFolderInput] = useState('');
   const [folderSelect, setFolderSelect] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [descriptionInput, setDescriptionInput] = useState('');
@@ -40,14 +40,19 @@ export default function ImageDetailPage({ params: { id } }: Params) {
       try {
         const res = await fetch('/api/images');
         const data = await res.json();
-        const found = (data.images || []).find((i: any) => i.id === id);
+        const found = (data.images || []).find((i: CloudflareImage) => i.id === id);
         if (mounted) {
           setImage(found || null);
           // collect unique folders for select
-          const folders = Array.from(new Set((data.images || []).filter((i: any) => i.folder && i.folder.trim()).map((i: any) => String(i.folder))));
+          const folders = Array.from(
+            new Set(
+              (data.images || [])
+                .filter((i: CloudflareImage) => i.folder && i.folder.trim())
+                .map((i: CloudflareImage) => String(i.folder))
+            )
+          );
           setUniqueFolders(folders as string[]);
           if (found) {
-            setFolderInput(found.folder || '');
             setFolderSelect(found.folder || '');
             setTagsInput(Array.isArray(found.tags) ? found.tags.join(', ') : '');
             setDescriptionInput(found.description || '');
@@ -113,7 +118,7 @@ export default function ImageDetailPage({ params: { id } }: Params) {
   return (
     <div className="p-6">
       <div className="mb-4">
-        <a href="/" className="text-sm text-blue-600 underline">← Back to gallery</a>
+        <Link href="/" className="text-sm text-blue-600 underline">← Back to gallery</Link>
       </div>
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
         <div className="p-6">
@@ -246,7 +251,7 @@ export default function ImageDetailPage({ params: { id } }: Params) {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(payload),
                     });
-                    const body = await res.json();
+                    const body = await res.json() as CloudflareImage;
                     if (res.ok) {
                       toast.push('Metadata updated');
                       // update local image state

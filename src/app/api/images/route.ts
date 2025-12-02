@@ -1,5 +1,22 @@
 import { NextResponse } from 'next/server';
 
+type CloudflareImageResponse = {
+  id: string;
+  filename?: string;
+  uploaded: string;
+  variants: string[];
+  meta?: unknown;
+};
+
+type ImageMeta = {
+  folder?: string;
+  tags?: string[];
+  description?: string;
+  originalUrl?: string;
+  altTag?: string;
+  filename?: string;
+};
+
 export async function GET() {
   try {
     // Check for required environment variables
@@ -34,24 +51,30 @@ export async function GET() {
     }
 
     // Transform the data to match our expected format
-    const images = result.result.images.map((image: any) => {
+    const apiImages: CloudflareImageResponse[] = Array.isArray(result.result?.images)
+      ? result.result.images
+      : [];
+
+    const images = apiImages.map((image) => {
       // Try to parse metadata if it exists
-      let parsedMeta = null;
+      let parsedMeta: ImageMeta | null = null;
       if (image.meta) {
         if (typeof image.meta === 'string') {
           try {
-            parsedMeta = JSON.parse(image.meta);
-          } catch (e) {
-            console.warn('Failed to parse image metadata as JSON:', e);
+            parsedMeta = JSON.parse(image.meta) as ImageMeta;
+          } catch (parseError) {
+            console.warn('Failed to parse image metadata as JSON:', parseError);
           }
         } else if (typeof image.meta === 'object') {
-          parsedMeta = image.meta;
+          parsedMeta = image.meta as ImageMeta;
         }
       }
 
       // Clean up folder and tags
       const cleanFolder = parsedMeta?.folder && parsedMeta.folder !== 'undefined' ? parsedMeta.folder : undefined;
-      const cleanTags = Array.isArray(parsedMeta?.tags) ? parsedMeta.tags.filter((t: any) => t && t !== 'undefined') : [];
+      const cleanTags = Array.isArray(parsedMeta?.tags)
+        ? parsedMeta.tags.filter((tag): tag is string => Boolean(tag) && tag !== 'undefined')
+        : [];
       const cleanDescription = parsedMeta?.description && parsedMeta.description !== 'undefined' ? parsedMeta.description : undefined;
       const cleanOriginalUrl = parsedMeta?.originalUrl && parsedMeta.originalUrl !== 'undefined' ? parsedMeta.originalUrl : undefined;
       const cleanAltTag = parsedMeta?.altTag && parsedMeta.altTag !== 'undefined' ? parsedMeta.altTag : undefined;

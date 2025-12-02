@@ -1,7 +1,5 @@
 'use client';
 
-"use client";
-
 import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, X, CheckCircle, AlertCircle } from "lucide-react";
@@ -21,6 +19,11 @@ interface UploadedImage {
 
 interface ImageUploaderProps {
   onImageUploaded?: () => void;
+}
+
+interface GalleryImageSummary {
+  id: string;
+  folder?: string | null;
 }
 
 export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
@@ -51,9 +54,9 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
       if (resp.ok && Array.isArray(data.images)) {
         const fetched: string[] = Array.from(
           new Set(
-            data.images
-              .filter((img: any) => img.folder && String(img.folder).trim())
-              .map((img: any) => String(img.folder))
+            (data.images as GalleryImageSummary[])
+              .map((img) => (img.folder ?? '').trim())
+              .filter((folder): folder is string => Boolean(folder))
           )
         );
 

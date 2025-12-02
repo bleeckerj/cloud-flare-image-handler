@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
-function parseMetadata(rawMeta: any) {
+type CloudflareMetadata = Record<string, unknown>;
+
+function parseMetadata(rawMeta: unknown): CloudflareMetadata {
   if (!rawMeta) return {};
   try {
     if (typeof rawMeta === 'string') {
       return JSON.parse(rawMeta);
     }
-    return rawMeta;
+    return rawMeta as CloudflareMetadata;
   } catch (error) {
     console.warn('Failed to parse Cloudflare metadata as JSON:', error);
     return {};
@@ -115,7 +117,10 @@ export async function POST(
     if (typeof messageContent === 'string') {
       altTextRaw = messageContent;
     } else if (Array.isArray(messageContent)) {
-      altTextRaw = messageContent.map((chunk: any) => chunk?.text || '').join(' ').trim();
+      altTextRaw = messageContent
+        .map((chunk: { text?: string }) => chunk?.text || '')
+        .join(' ')
+        .trim();
     }
 
     const altText = sanitizeString(altTextRaw);

@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+type ImageMeta = {
+  folder?: string;
+  tags?: string[];
+  description?: string;
+  originalUrl?: string;
+  altTag?: string;
+  filename?: string;
+};
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -103,17 +112,19 @@ export async function GET(
     if (image?.meta) {
       if (typeof image.meta === 'string') {
         try {
-          parsedMeta = JSON.parse(image.meta);
-        } catch (e) {
+          parsedMeta = JSON.parse(image.meta) as ImageMeta;
+        } catch {
           parsedMeta = null;
         }
       } else if (typeof image.meta === 'object') {
-        parsedMeta = image.meta;
+        parsedMeta = image.meta as ImageMeta;
       }
     }
 
     const cleanFolder = parsedMeta?.folder && parsedMeta.folder !== 'undefined' ? parsedMeta.folder : undefined;
-    const cleanTags = Array.isArray(parsedMeta?.tags) ? parsedMeta.tags.filter((t: any) => t && t !== 'undefined') : [];
+    const cleanTags = Array.isArray(parsedMeta?.tags)
+      ? parsedMeta.tags.filter((tag): tag is string => Boolean(tag) && tag !== 'undefined')
+      : [];
     const cleanDescription = parsedMeta?.description && parsedMeta.description !== 'undefined' ? parsedMeta.description : undefined;
     const cleanOriginalUrl = parsedMeta?.originalUrl && parsedMeta.originalUrl !== 'undefined' ? parsedMeta.originalUrl : undefined;
     const cleanAltTag = parsedMeta?.altTag && parsedMeta.altTag !== 'undefined' ? parsedMeta.altTag : undefined;

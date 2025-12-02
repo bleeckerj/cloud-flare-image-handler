@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, useMemo, CSSProperties } from 'react';
 import { Trash2, Copy, ExternalLink, Sparkles } from 'lucide-react';
 import Image from 'next/image';
 import { getCloudflareImageUrl, getMultipleImageUrls } from '@/utils/imageUtils';
@@ -41,7 +41,6 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [currentPage, setCurrentPage] = useState(1);
   const [editingImage, setEditingImage] = useState<string | null>(null);
-  const [editFolder, setEditFolder] = useState<string>('');
   const [editTags, setEditTags] = useState<string>('');
   const [editFolderSelect, setEditFolderSelect] = useState<string>('');
   const [newEditFolder, setNewEditFolder] = useState<string>('');
@@ -787,11 +786,15 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       {openCopyMenu && (() => {
         const modalImage = images.find(i => i.id === openCopyMenu);
         if (!modalImage) return null;
+        const blurOverlayStyle: CSSProperties = {
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)'
+        };
         return (
           <>
               <div
                 className="fixed inset-0 bg-black/30 backdrop-blur-md z-[100000]"
-                style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any}
+                style={blurOverlayStyle}
                 onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
               />
               <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100001] text-sm text-gray-800 border">
