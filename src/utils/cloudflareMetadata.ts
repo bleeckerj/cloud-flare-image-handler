@@ -6,6 +6,7 @@ export type CloudflareMetadata = {
   altTag?: string;
   filename?: string;
   variationParentId?: string;
+  linkedAssetId?: string;
   uploadedAt?: string;
   updatedAt?: string;
   [key: string]: unknown;

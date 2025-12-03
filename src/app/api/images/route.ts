@@ -57,6 +57,7 @@ export async function GET() {
       const cleanOriginalUrl = parsedMeta.originalUrl && parsedMeta.originalUrl !== 'undefined' ? parsedMeta.originalUrl : undefined;
       const cleanAltTag = parsedMeta.altTag && parsedMeta.altTag !== 'undefined' ? parsedMeta.altTag : undefined;
       const parentId = cleanString(parsedMeta.variationParentId);
+      const linkedAssetId = cleanString(parsedMeta.linkedAssetId);
 
       return {
         id: image.id,
@@ -69,6 +70,7 @@ export async function GET() {
         originalUrl: cleanOriginalUrl,
         altTag: cleanAltTag,
         parentId,
+        linkedAssetId,
       };
     });
 

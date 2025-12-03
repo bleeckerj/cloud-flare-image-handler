@@ -125,8 +125,70 @@ export async function POST(request: NextRequest) {
 
     console.log('Cloudflare upload result:', JSON.stringify(result, null, 2));
 
-    // Return the image details
     const imageData = result.result;
+
+    let webpVariantId: string | undefined;
+    if (file.type === 'image/svg+xml') {
+      try {
+        const webpBuffer = await sharp(buffer).webp({ quality: 85 }).toBuffer();
+        const webpName = file.name.replace(/\.svg$/i, '') + '.webp';
+        const webpFormData = new FormData();
+        webpFormData.append('file', new Blob([webpBuffer], { type: 'image/webp' }), webpName);
+        const webpMetadataPayload = {
+          ...metadataPayload,
+          filename: webpName,
+          variationParentId: cleanParentId,
+          linkedAssetId: imageData.id,
+        };
+        webpFormData.append('metadata', JSON.stringify(webpMetadataPayload));
+        const webpResponse = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/images/v1`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiToken}`,
+            },
+            body: webpFormData,
+          }
+        );
+        const webpJson = await webpResponse.json();
+        if (!webpResponse.ok) {
+          console.error('Cloudflare WebP upload error:', webpJson);
+        } else {
+          webpVariantId = webpJson.result?.id;
+        }
+      } catch (err) {
+        console.error('Failed to convert SVG to WebP', err);
+      }
+    }
+
+    if (webpVariantId) {
+      const updatedMetadata = {
+        ...metadataPayload,
+        linkedAssetId: webpVariantId,
+        updatedAt: new Date().toISOString(),
+      };
+      try {
+        const patchResp = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/images/v1/${imageData.id}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${apiToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ metadata: updatedMetadata }),
+          }
+        );
+        if (!patchResp.ok) {
+          const patchJson = await patchResp.json();
+          console.error('Failed to patch SVG metadata', patchJson);
+        }
+      } catch (err) {
+        console.error('Failed to patch SVG metadata', err);
+      }
+    }
+
     return NextResponse.json({
       id: imageData.id,
       filename: file.name,
@@ -138,6 +200,8 @@ export async function POST(request: NextRequest) {
       description: cleanDescription,
       originalUrl: cleanOriginalUrl,
       parentId: cleanParentId,
+      linkedAssetId: webpVariantId,
+      webpVariantId,
     });
 
   } catch (error) {

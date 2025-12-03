@@ -22,6 +22,7 @@ interface CloudflareImage {
   dimensions?: { width: number; height: number };
   altTag?: string;
   parentId?: string;
+  linkedAssetId?: string;
 }
 
 interface ImageGalleryProps {

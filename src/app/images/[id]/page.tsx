@@ -21,6 +21,7 @@ interface CloudflareImage {
   description?: string;
   originalUrl?: string;
   parentId?: string;
+  linkedAssetId?: string;
 }
 
 export default function ImageDetailPage() {
@@ -62,7 +63,7 @@ export default function ImageDetailPage() {
   const [saving, setSaving] = useState(false);
   const [uniqueFolders, setUniqueFolders] = useState<string[]>([]);
 const [newFolderInput, setNewFolderInput] = useState('');
-  const [variantModalImage, setVariantModalImage] = useState<CloudflareImage | null>(null);
+  const [variantModalState, setVariantModalState] = useState<{ target: CloudflareImage; mode: 'single' | 'list' } | null>(null);
 
   useEffect(() => {
     setVariationPage(1);
@@ -510,7 +511,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
           </div>
 
           <div className="space-y-4">
-            <div>
+            <div id="description-section">
               <p className="text-xs font-mono font-medum text-gray-700">Description</p>
               <textarea
                 value={descriptionInput}
@@ -533,7 +534,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
               </button>
             </div>
 
-            <div>
+            <div id="folder-section">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-mono font-medum text-gray-700">Folder</p>
                 <FolderManagerButton
@@ -561,7 +562,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
               </div>
             </div>
 
-            <div>
+            <div id="tags-section">
               <p className="text-xs font-mono font-medum text-gray-700">Tags</p>
               <input
                 value={tagsInput}
@@ -571,7 +572,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
               />
             </div>
 
-            <div>
+            <div id="original-url-section">
               <p className="text-xs font-mono font-medum text-gray-700">Original URL</p>
               <div className="flex items-center gap-3 mt-2">
                 <input
@@ -589,7 +590,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
               </div>
             </div>
 
-            <div>
+            <div id="variant-links-section">
               <p className="text-xs font-mono font-medum text-gray-700">Available variants</p>
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {Object.entries(variants).map(([variant, url]) => (
@@ -614,7 +615,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
 
             <div className="space-y-4">
               {parentImage && (
-                <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-4 space-y-3">
+                <div id="parent-info-section" className="border border-yellow-200 bg-yellow-50 rounded-lg p-4 space-y-3">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex-1">
                       {/* <p className="text-xs font-semibold text-yellow-800">
@@ -691,7 +692,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
                 </div>
               )}
 
-              <div className="space-y-3">
+              <div id="variations-section" className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-mono font-medum text-gray-700">
                     {isChildImage ? 'Other variations from this parent' : 'Variations'}
@@ -702,12 +703,14 @@ const [newFolderInput, setNewFolderInput] = useState('');
                       {isChildImage ? 'other variation' : 'variation'}
                       {variationCount !== 1 ? 's' : ''}
                     </p>
-                    <button
-                      onClick={() => setVariantModalImage({ ...image })}
-                      className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-blue-600 hover:bg-blue-50"
-                    >
-                      Copy list
-                    </button>
+                    {!isChildImage && (
+                      <button
+                        onClick={() => setVariantModalState({ target: image, mode: 'list' })}
+                        className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-blue-600 hover:bg-blue-50"
+                      >
+                        Copy list
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -745,7 +748,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
                             Uploaded {new Date(child.uploaded).toLocaleDateString()}
                           </p>
                           <button
-                            onClick={() => setVariantModalImage(child)}
+                            onClick={() => setVariantModalState({ target: child, mode: 'single' })}
                             className="inline-flex items-center gap-1 text-xs text-blue-600 underline"
                           >
                             View sizes
@@ -800,7 +803,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
 
             {!image.parentId && (
               <>
-                <div className="space-y-3 border border-dashed rounded-lg p-3 bg-gray-50">
+                <div id="adopt-variation-section" className="space-y-3 border border-dashed rounded-lg p-3 bg-gray-50">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <label htmlFor="adopt-search" className="text-xs font-medium text-gray-700">
                       Adopt existing image as a variation
@@ -888,7 +891,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
                   )}
                 </div>
 
-                <div className="space-y-2 border border-dashed rounded-lg p-3 bg-blue-50">
+                <div id="upload-variation-section" className="space-y-2 border border-dashed rounded-lg p-3 bg-blue-50">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
                       <h3 className="text-xs font-mono font-medum text-gray-800">Upload a new variation</h3>
@@ -1007,17 +1010,15 @@ const [newFolderInput, setNewFolderInput] = useState('');
         </div>
         </div>
       </div>
-      {variantModalImage && (() => {
+      {variantModalState && (() => {
+        const { target, mode } = variantModalState;
         const blurOverlayStyle: CSSProperties = {
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)'
         };
-        const getVariantEntries = (imageId: string) =>
-          Object.entries(
-            getMultipleImageUrls(imageId, ['thumbnail','small','medium','large','xlarge','original'])
-          );
-
-        const variantEntries = getVariantEntries(variantModalImage.id);
+        const variantEntries = Object.entries(
+          getMultipleImageUrls(target.id, ['thumbnail','small','medium','large','xlarge','original'])
+        );
 
         const formatEntriesAsYaml = (entries: { url: string; altText: string }[]) => {
           const lines = ['imagesFromGridDirectory:'];
@@ -1034,16 +1035,14 @@ const [newFolderInput, setNewFolderInput] = useState('');
             altText: img.description || ''
           });
 
-          if (variantModalImage && variantModalImage.id === image.id) {
-            const entries = [buildEntry(image, url), ...displayedVariations.map((child) => buildEntry(child, getCloudflareImageUrl(child.id, variant)))];
+          if (mode === 'list') {
+            const entries = [buildEntry(image, getCloudflareImageUrl(image.id, variant)), ...displayedVariations.map((child) => buildEntry(child, getCloudflareImageUrl(child.id, variant)))];
             const payload = formatEntriesAsYaml(entries);
             await copyToClipboard(payload, `${variant} list`);
-          } else if (variantModalImage) {
-            const single = [buildEntry(variantModalImage, url)];
-            const payload = formatEntriesAsYaml(single);
-            await copyToClipboard(payload, `${variant} variant`);
+          } else {
+            await copyToClipboard(url, `${variant} variant`);
           }
-          setVariantModalImage(null);
+          setVariantModalState(null);
         };
 
         return (
@@ -1051,7 +1050,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
             <div
               className="fixed inset-0 bg-black/30 backdrop-blur-md z-[100000]"
               style={blurOverlayStyle}
-              onClick={() => setVariantModalImage(null)}
+              onClick={() => setVariantModalState(null)}
             />
             <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100001] text-xs text-gray-800 border">
               <div className="flex items-center justify-between p-3 border-b">
@@ -1059,7 +1058,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
                   Copy Image URL
                 </div>
                 <button
-                  onClick={() => setVariantModalImage(null)}
+                  onClick={() => setVariantModalState(null)}
                   className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
                 >
                   ×
