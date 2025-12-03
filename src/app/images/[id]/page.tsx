@@ -696,11 +696,19 @@ const [newFolderInput, setNewFolderInput] = useState('');
                   <p className="text-xs font-mono font-medum text-gray-700">
                     {isChildImage ? 'Other variations from this parent' : 'Variations'}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    {variationCount}{' '}
-                    {isChildImage ? 'other variation' : 'variation'}
-                    {variationCount !== 1 ? 's' : ''}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-gray-500">
+                      {variationCount}{' '}
+                      {isChildImage ? 'other variation' : 'variation'}
+                      {variationCount !== 1 ? 's' : ''}
+                    </p>
+                    <button
+                      onClick={() => setVariantModalImage({ ...image })}
+                      className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-blue-600 hover:bg-blue-50"
+                    >
+                      Copy list
+                    </button>
+                  </div>
                 </div>
 
                 {variationCount === 0 ? (
@@ -1004,9 +1012,40 @@ const [newFolderInput, setNewFolderInput] = useState('');
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)'
         };
-        const variantEntries = Object.entries(
-          getMultipleImageUrls(variantModalImage.id, ['thumbnail','small','medium','large','xlarge','original'])
-        );
+        const getVariantEntries = (imageId: string) =>
+          Object.entries(
+            getMultipleImageUrls(imageId, ['thumbnail','small','medium','large','xlarge','original'])
+          );
+
+        const variantEntries = getVariantEntries(variantModalImage.id);
+
+        const formatEntriesAsYaml = (entries: { url: string; altText: string }[]) => {
+          const lines = ['imagesFromGridDirectory:'];
+          entries.forEach((entry) => {
+            lines.push('  - url: ' + entry.url);
+            lines.push('    altText: ' + JSON.stringify(entry.altText ?? ''));
+          });
+          return lines.join('\n');
+        };
+
+        const handleCopyVariantList = async (variant: string, url: string) => {
+          const buildEntry = (img: CloudflareImage, entryUrl: string) => ({
+            url: entryUrl,
+            altText: img.description || ''
+          });
+
+          if (variantModalImage && variantModalImage.id === image.id) {
+            const entries = [buildEntry(image, url), ...displayedVariations.map((child) => buildEntry(child, getCloudflareImageUrl(child.id, variant)))];
+            const payload = formatEntriesAsYaml(entries);
+            await copyToClipboard(payload, `${variant} list`);
+          } else if (variantModalImage) {
+            const single = [buildEntry(variantModalImage, url)];
+            const payload = formatEntriesAsYaml(single);
+            await copyToClipboard(payload, `${variant} variant`);
+          }
+          setVariantModalImage(null);
+        };
+
         return (
           <>
             <div
@@ -1035,14 +1074,13 @@ const [newFolderInput, setNewFolderInput] = useState('');
                     </div>
                     <button
                       onClick={async () => {
-                        await copyToClipboard(String(url), `${variant} variant`);
-                        setVariantModalImage(null);
+                        await handleCopyVariantList(variant, String(url));
                       }}
                       className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-xs font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
                     >
                       Copy
                     </button>
-                  </div>
+                 </div>
                 ))}
               </div>
             </div>

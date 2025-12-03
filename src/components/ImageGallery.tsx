@@ -431,6 +431,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     [uniqueFolders]
   );
 
+  const isSvgImage = (img: CloudflareImage) => img.filename?.toLowerCase().endsWith('.svg') ?? false;
+
   const filteredImages = useMemo(() => {
     return images.filter(image => {
       const matchesFolder = selectedFolder === 'all' ||
@@ -679,6 +681,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             {pageImages.map((image) => {
               const variationChildren = childrenMap[image.id] || [];
               const imageUrl = getImageUrl(image, selectedVariant);
+              const svgImage = isSvgImage(image);
+              const displayUrl = svgImage ? getCloudflareImageUrl(image.id, 'original') : imageUrl;
               return (
                 <div
                   key={image.id}
@@ -699,13 +703,21 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     onMouseLeave={handleMouseLeave}
                     prefetch={false}
                   >
-                    <Image
-                      src={imageUrl}
-                      alt={image.filename}
-                      fill
-                      className={respectAspectRatio ? 'object-contain bg-gray-50' : 'object-cover'}
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                    />
+                    {svgImage ? (
+                      <img
+                        src={displayUrl}
+                        alt={image.filename}
+                        className={`absolute inset-0 w-full h-full ${respectAspectRatio ? 'object-contain bg-white' : 'object-cover'}`}
+                      />
+                    ) : (
+                      <Image
+                        src={displayUrl}
+                        alt={image.filename}
+                        fill
+                        className={respectAspectRatio ? 'object-contain bg-gray-50' : 'object-cover'}
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    )}
                   </Link>
                   
                   {/* Metadata footer */}
@@ -796,6 +808,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             {pageImages.map((image) => {
               const variationChildren = childrenMap[image.id] || [];
               const imageUrl = getImageUrl(image, selectedVariant);
+              const svgImage = isSvgImage(image);
+              const displayUrl = svgImage ? getCloudflareImageUrl(image.id, 'original') : imageUrl;
               return (
                 <div
                   key={image.id}
@@ -809,13 +823,21 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     onMouseLeave={handleMouseLeave}
                     prefetch={false}
                   >
-                    <Image
-                      src={imageUrl}
-                      alt={image.filename}
-                      fill
-                      className="object-cover"
-                      sizes="64px"
-                    />
+                    {svgImage ? (
+                      <img
+                        src={displayUrl}
+                        alt={image.filename}
+                        className="absolute inset-0 w-full h-full object-contain bg-white"
+                      />
+                    ) : (
+                      <Image
+                        src={displayUrl}
+                        alt={image.filename}
+                        fill
+                        className="object-cover"
+                        sizes="64px"
+                      />
+                    )}
                   </Link>
                   
                   <div className="flex-1 min-w-0">
