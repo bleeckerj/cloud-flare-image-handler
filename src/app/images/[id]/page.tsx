@@ -171,9 +171,19 @@ const [newFolderInput, setNewFolderInput] = useState('');
     return allImages.find((img) => img.id === image.parentId) || null;
   }, [allImages, image?.parentId]);
 
+  const parentWithChildren = useMemo(() => {
+    const set = new Set<string>();
+    allImages.forEach((img) => {
+      if (img.parentId) {
+        set.add(img.parentId);
+      }
+    });
+    return set;
+  }, [allImages]);
+
   const adoptableImages = useMemo(
-    () => allImages.filter((img) => !img.parentId && img.id !== id),
-    [allImages, id]
+    () => allImages.filter((img) => !img.parentId && !parentWithChildren.has(img.id) && img.id !== id),
+    [allImages, id, parentWithChildren]
   );
 
   const filteredAdoptableImages = useMemo(() => {

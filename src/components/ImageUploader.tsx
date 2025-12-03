@@ -39,6 +39,31 @@ const base64ToFile = (base64: string, filename: string, mimeType: string) => {
   return new File([bytes], filename, { type: mimeType });
 };
 
+const MAX_BYTES = 10 * 1024 * 1024;
+
+const shrinkImageFile = async (file: File): Promise<File> => {
+  if (file.size <= MAX_BYTES) return file;
+  const imageBitmap = await createImageBitmap(file);
+  const canvas = document.createElement('canvas');
+  const maxDim = 4000;
+  const scale = Math.min(1, maxDim / Math.max(imageBitmap.width, imageBitmap.height));
+  canvas.width = Math.round(imageBitmap.width * scale);
+  canvas.height = Math.round(imageBitmap.height * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return file;
+  ctx.drawImage(imageBitmap, 0, 0, canvas.width, canvas.height);
+  let quality = 0.85;
+  let blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+  while (blob && blob.size > MAX_BYTES && quality > 0.4) {
+    quality -= 0.1;
+    blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+  }
+  if (blob && blob.size <= MAX_BYTES) {
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  }
+  return file;
+};
+
 export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -230,13 +255,19 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
 
   // Handle drag and drop - either queue or upload immediately
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    setQueuedFiles((prev) => [...prev, ...acceptedFiles]);
+    const resizedPromises = acceptedFiles.map(async (file) => await shrinkImageFile(file));
+    const resizedFiles = await Promise.all(resizedPromises);
+    setQueuedFiles((prev) => [...prev, ...resizedFiles]);
   }, []);
 
   // Manual upload button handler
-  const handleManualUpload = () => {
+  const handleManualUpload = async () => {
     if (queuedFiles.length > 0) {
-      uploadFiles(queuedFiles);
+      const processed: File[] = [];
+      for (const file of queuedFiles) {
+        processed.push(await shrinkImageFile(file));
+      }
+      uploadFiles(processed);
       setQueuedFiles([]); // Clear the queue
     }
   };

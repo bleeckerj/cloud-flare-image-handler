@@ -35,35 +35,42 @@ export interface ImageGalleryRef {
 const PAGE_SIZE = 15;
 
 const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTrigger }, ref) => {
+  const getStoredPreferences = () => {
+    if (typeof window === 'undefined') {
+      return { variant: 'public', onlyCanonical: false, respectAspectRatio: false };
+    }
+    try {
+      const stored = window.localStorage.getItem('galleryPreferences');
+      if (stored) {
+        const parsed = JSON.parse(stored) as { variant?: string; onlyCanonical?: boolean; respectAspectRatio?: boolean };
+        return {
+          variant: typeof parsed.variant === 'string' ? parsed.variant : 'public',
+          onlyCanonical: Boolean(parsed.onlyCanonical),
+          respectAspectRatio: Boolean(parsed.respectAspectRatio)
+        };
+      }
+    } catch (error) {
+      console.warn('Failed to parse gallery preferences', error);
+    }
+    return { variant: 'public', onlyCanonical: false, respectAspectRatio: false };
+  };
+
   const [images, setImages] = useState<CloudflareImage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedVariant, setSelectedVariant] = useState<string>('public');
+  const [selectedVariant, setSelectedVariant] = useState<string>(() => getStoredPreferences().variant);
   const [openCopyMenu, setOpenCopyMenu] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [currentPage, setCurrentPage] = useState(1);
-  const [onlyCanonical, setOnlyCanonical] = useState(false);
-  const [respectAspectRatio, setRespectAspectRatio] = useState(false);
+  const [onlyCanonical, setOnlyCanonical] = useState(() => getStoredPreferences().onlyCanonical);
+  const [respectAspectRatio, setRespectAspectRatio] = useState(() => getStoredPreferences().respectAspectRatio);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     try {
-      const stored = localStorage.getItem('galleryPreferences');
-      if (stored) {
-        const parsed = JSON.parse(stored) as { onlyCanonical?: boolean; respectAspectRatio?: boolean; variant?: string };
-        if (typeof parsed.onlyCanonical === 'boolean') setOnlyCanonical(parsed.onlyCanonical);
-        if (typeof parsed.respectAspectRatio === 'boolean') setRespectAspectRatio(parsed.respectAspectRatio);
-        if (parsed.variant && typeof parsed.variant === 'string') setSelectedVariant(parsed.variant);
-      }
-    } catch (error) {
-      console.warn('Failed to load gallery prefs', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('galleryPreferences', JSON.stringify({
+      window.localStorage.setItem('galleryPreferences', JSON.stringify({
         onlyCanonical,
         respectAspectRatio,
         variant: selectedVariant

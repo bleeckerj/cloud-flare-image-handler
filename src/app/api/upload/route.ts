@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,9 +41,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert file to buffer
+    // Convert file to buffer and shrink if necessary
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    let buffer = Buffer.from(bytes);
+
+    const shrinkIfNeeded = async (input: Buffer, type: string): Promise<Buffer> => {
+      if (input.byteLength <= maxSize) {
+        return input;
+      }
+      const transformer = sharp(input).rotate();
+      const metadata = await transformer.metadata();
+      const width = metadata.width || 4096;
+      const height = metadata.height || 4096;
+      const maxDimension = Math.max(width, height);
+      const targetDimension = Math.min(maxDimension, 4000);
+      const scale = targetDimension / maxDimension;
+      const resized = transformer.resize(Math.round(width * scale), Math.round(height * scale), { fit: 'inside' });
+      const format = type.includes('png') ? 'png' : 'jpeg';
+      const encoded = await resized.toFormat(format, { quality: 85 }).toBuffer();
+      if (encoded.byteLength <= maxSize) {
+        return encoded;
+      }
+      return resized.toFormat(format, { quality: 70 }).toBuffer();
+    };
+
+    buffer = await shrinkIfNeeded(buffer, file.type);
 
     // Upload to Cloudflare Images
     const uploadFormData = new FormData();
