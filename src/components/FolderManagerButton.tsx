@@ -17,7 +17,7 @@ interface FolderResponse {
 export default function FolderManagerButton({
   onFoldersChanged,
   size = 'sm',
-  className = '',
+  className = 'font-mono',
   label = 'Manage'
 }: FolderManagerButtonProps) {
   const [open, setOpen] = useState(false);
@@ -36,8 +36,8 @@ export default function FolderManagerButton({
   }, [open]);
 
   const buttonClasses = size === 'sm'
-    ? 'text-xs px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-100'
-    : 'text-sm px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-100';
+    ? 'text-[0.7em] font-mono font-mono px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-100'
+    : 'text-sm font-mono px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-100';
 
   const loadFolders = async () => {
     try {
@@ -161,9 +161,9 @@ export default function FolderManagerButton({
             className="fixed inset-0 bg-black/30 backdrop-blur-md z-[110000]"
             onClick={() => setOpen(false)}
           />
-          <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[420px] bg-white rounded-lg shadow-xl z-[110001] text-xs text-gray-800 border">
+          <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[420px] bg-white rounded-lg shadow-xl z-[110001] text-[0.7em] font-mono font-mono text-gray-800 border">
             <div className="flex items-center justify-between px-4 py-3 border-b">
-              <p className="text-xs font-mono font-semibold">Manage folders</p>
+              <p className="text-[0.7em] font-mono font-mono font-semibold">Manage folders</p>
               <button
                 onClick={() => setOpen(false)}
                 className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
@@ -173,19 +173,19 @@ export default function FolderManagerButton({
             </div>
             <div className="p-4 space-y-3 max-h-[70vh] overflow-auto">
               <div className="space-y-2">
-                <label className="text-[11px] uppercase tracking-wide text-gray-500">Create folder</label>
+                <label className="text-[11px] font-mono uppercase tracking-wide text-gray-500">Create folder</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
-                    className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-[0.7em] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="marketing-assets"
                   />
                   <button
                     onClick={createFolder}
                     disabled={loading || !newFolderName.trim()}
-                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md disabled:opacity-50"
+                    className="px-3 py-1 text-[0.7em] font-mono bg-blue-600 text-white rounded-md disabled:opacity-50"
                   >
                     Add
                   </button>
@@ -193,11 +193,11 @@ export default function FolderManagerButton({
               </div>
               <div>
                 <p className="text-[11px] uppercase tracking-wide text-gray-500 mb-2">Existing folders</p>
-                {error && <p className="text-red-600 text-xs mb-2">{error}</p>}
+                {error && <p className="text-red-600 text-[0.7em] font-mono mb-2">{error}</p>}
                 {loading && folders.length === 0 ? (
-                  <p className="text-xs text-gray-500">Loading…</p>
+                  <p className="text-[0.7em] font-mono text-gray-500">Loading…</p>
                 ) : folders.length === 0 ? (
-                  <p className="text-xs text-gray-500">No folders yet</p>
+                  <p className="text-[0.7em] font-mono text-gray-500">No folders yet</p>
                 ) : (
                   <div className="space-y-2">
                     {folders.map((folder) => (
@@ -207,24 +207,24 @@ export default function FolderManagerButton({
                             <input
                               value={renameValue}
                               onChange={(e) => setRenameValue(e.target.value)}
-                              className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-xs"
+                              className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-[0.7em] font-mono"
                             />
                             <button
                               onClick={() => submitRename(folder)}
-                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md"
+                              className="px-2 py-1 text-[0.7em] font-mono bg-blue-600 text-white rounded-md"
                             >
                               Save
                             </button>
                             <button
                               onClick={cancelRename}
-                              className="px-2 py-1 text-xs border border-gray-300 rounded-md"
+                              className="px-2 py-1 text-[0.7em] font-mono border border-gray-300 rounded-md"
                             >
                               Cancel
                             </button>
                           </>
                         ) : (
                           <>
-                            <span className="flex-1 text-xs font-mono">{folder}</span>
+                            <span className="flex-1 text-[0.7em] font-mono font-mono">{folder}</span>
                             <button
                               onClick={() => startRename(folder)}
                               className="px-2 py-1 text-[11px] border border-gray-300 rounded-md"

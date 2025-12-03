@@ -170,7 +170,7 @@ export default function MonoSelect({
                 aria-selected={option.value === value}
                 disabled={option.disabled}
                 className={cn(
-                  'w-full text-left px-3 py-2 text-xs transition',
+                  'w-full text-left px-3 py-2 text-[0.7em] font-mono transition',
                   option.disabled
                     ? 'text-gray-400 cursor-not-allowed'
                     : option.value === value

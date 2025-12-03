@@ -44,6 +44,34 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [currentPage, setCurrentPage] = useState(1);
+  const [onlyCanonical, setOnlyCanonical] = useState(false);
+  const [respectAspectRatio, setRespectAspectRatio] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('galleryPreferences');
+      if (stored) {
+        const parsed = JSON.parse(stored) as { onlyCanonical?: boolean; respectAspectRatio?: boolean; variant?: string };
+        if (typeof parsed.onlyCanonical === 'boolean') setOnlyCanonical(parsed.onlyCanonical);
+        if (typeof parsed.respectAspectRatio === 'boolean') setRespectAspectRatio(parsed.respectAspectRatio);
+        if (parsed.variant && typeof parsed.variant === 'string') setSelectedVariant(parsed.variant);
+      }
+    } catch (error) {
+      console.warn('Failed to load gallery prefs', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('galleryPreferences', JSON.stringify({
+        onlyCanonical,
+        respectAspectRatio,
+        variant: selectedVariant
+      }));
+    } catch (error) {
+      console.warn('Failed to save gallery prefs', error);
+    }
+  }, [onlyCanonical, respectAspectRatio, selectedVariant]);
   const [editingImage, setEditingImage] = useState<string | null>(null);
   const [editTags, setEditTags] = useState<string>('');
   const [editFolderSelect, setEditFolderSelect] = useState<string>('');
@@ -315,18 +343,18 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 
     if (loading) {
       return (
-        <p className="text-xs text-gray-400">
+        <p className="text-sm font-mono text-gray-400">
           📐 <span className="inline-block w-8 h-2 bg-gray-200 rounded animate-pulse"></span>
         </p>
       );
     }
 
     if (error || !aspectRatio) {
-      return <p className="text-xs text-gray-400">📐 --</p>;
+      return <p className="text-sm font-mono text-gray-400">📐 --</p>;
     }
 
     return (
-      <p className="text-xs text-gray-500 flex items-center gap-1">
+      <p className="text-[0.6rem] font-mono text-gray-500 flex items-center gap-1">
         📐 {aspectRatio} {getOrientationIcon(aspectRatio)}
       </p>
     );
@@ -404,14 +432,18 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 
       const matchesTag = !selectedTag || (image.tags && image.tags.includes(selectedTag));
 
+      const normalizedSearch = searchTerm.toLowerCase();
       const matchesSearch = !searchTerm ||
-        image.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (image.tags && image.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))) ||
-        (image.folder && image.folder.toLowerCase().includes(searchTerm.toLowerCase()));
+        image.filename.toLowerCase().includes(normalizedSearch) ||
+        (image.tags && image.tags.some(tag => tag.toLowerCase().includes(normalizedSearch))) ||
+        (image.folder && image.folder.toLowerCase().includes(normalizedSearch)) ||
+        (image.altTag && image.altTag.toLowerCase().includes(normalizedSearch));
 
-      return matchesFolder && matchesTag && matchesSearch;
+      const matchesVariantFilter = !onlyCanonical || !image.parentId;
+
+      return matchesFolder && matchesTag && matchesSearch && matchesVariantFilter;
     });
-  }, [images, selectedFolder, selectedTag, searchTerm]);
+  }, [images, selectedFolder, selectedTag, searchTerm, onlyCanonical]);
 
   const sortedImages = useMemo(() => {
     return [...filteredImages].sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
@@ -496,18 +528,18 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       >
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
-            <p className="text-xs font-mono text-gray-900">
+            <p className="text-[0.7em] font-mono font-mono text-gray-900">
               Image Gallery ({filteredImages.length}/{images.length})
             </p>
             {showPagination && currentPageRangeLabel && (
-              <p className="font-mono text-xs text-gray-500">
+              <p className="font-mono text-[0.7em] font-mono text-gray-500">
                 Showing uploads from {currentPageRangeLabel}
               </p>
             )}
           </div>
           <div className="flex items-center gap-2">
             {showPagination && (
-              <div className="flex items-center gap-2 text-xs text-gray-600">
+              <div className="flex items-center gap-2 text-[0.7em] font-mono text-gray-600">
                 <button
                   onClick={goToPreviousPage}
                   disabled={pageIndex === 1}
@@ -531,16 +563,16 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             )}
             <button
               onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-              className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-md"
+              className="px-3 py-1 text-[0.7em] font-mono bg-gray-100 hover:bg-gray-200 rounded-md"
             >
               {viewMode === 'grid' ? '📋 List' : '🔲 Grid'}
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg items-end">
           <div>
-            <label htmlFor="search" className="block text-xs font-mono font-medum text-gray-700 mb-1">
+            <label htmlFor="search" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
               Search
             </label>
             <input
@@ -549,13 +581,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               placeholder="Search files, tags, folders..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-[0.7em] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label htmlFor="folder-filter" className="block text-xs font-mono font-medum text-gray-700">
+              <label htmlFor="folder-filter" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700">
                 Folder
               </label>
               <FolderManagerButton onFoldersChanged={handleFoldersChanged} size="sm" label="Manage" />
@@ -570,7 +602,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           </div>
           
           <div>
-            <label htmlFor="tag-filter" className="block text-xs font-mono font-medum text-gray-700 mb-1">
+            <label htmlFor="tag-filter" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
               Tag
             </label>
             <MonoSelect
@@ -582,9 +614,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               placeholder="All tags"
             />
           </div>
-          
           <div>
-            <label htmlFor="variant-select" className="block text-xs font-mono font-medum text-gray-700 mb-1">
+            <label htmlFor="variant-select" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
               Image Size
             </label>
             <MonoSelect
@@ -594,6 +625,29 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               options={variantOptions}
               className="w-full"
             />
+          </div>
+
+          <div className="flex flex-col gap-1 text-[0.7em] font-mono text-gray-700">
+            <label htmlFor="canonical-filter" className="flex items-center gap-1 font-mono">
+              <input
+                id="canonical-filter"
+                type="checkbox"
+                checked={onlyCanonical}
+                onChange={(e) => setOnlyCanonical(e.target.checked)}
+                className="h-3 w-3 font-mono text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              canonical
+            </label>
+            <label htmlFor="aspect-filter" className="flex items-center gap-1 font-mono">
+              <input
+                id="aspect-filter"
+                type="checkbox"
+                checked={respectAspectRatio}
+                onChange={(e) => setRespectAspectRatio(e.target.checked)}
+                className="h-3 w-3 font-mono text-[0.7em] font-mono text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              aspect
+            </label>
           </div>
         </div>
       </div>
@@ -608,7 +662,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           <p className="text-gray-500">
             {images.length === 0 ? 'No images uploaded yet' : 'No images match your filters'}
           </p>
-          <p className="text-xs text-gray-400">
+          <p className="text-[0.7em] font-mono text-gray-400">
             {images.length === 0 ? 'Upload some images to see them here' : 'Try adjusting your search or filters'}
           </p>
         </div>
@@ -625,7 +679,14 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 >
                   <Link
                     href={`/images/${image.id}`}
-                    className="relative block w-full aspect-square cursor-pointer"
+                    className={`relative block w-full cursor-pointer ${respectAspectRatio ? '' : 'aspect-square'}`}
+                    style={
+                      respectAspectRatio && image.dimensions
+                        ? { paddingBottom: `${(image.dimensions.height / image.dimensions.width) * 100}%` }
+                        : respectAspectRatio
+                          ? { paddingBottom: '75%' }
+                          : undefined
+                    }
                     onMouseEnter={(e) => handleMouseEnter(image.id, e)}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
@@ -635,13 +696,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                       src={imageUrl}
                       alt={image.filename}
                       fill
-                      className="object-cover"
+                      className={respectAspectRatio ? 'object-contain bg-gray-50' : 'object-cover'}
                       sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                     />
                   </Link>
                   
                   {/* Metadata footer */}
-                  <div className="px-3 py-2 bg-white border-t border-gray-100 flex-1 flex flex-col">
+                  <div id="metadata-footer" className="px-3 py-2 bg-white border-t border-gray-100 flex-1 flex flex-col">
                     <div className="flex-1 flex flex-col gap-1">
                       <p className="text-[0.6rem] font-mono font-semibold text-gray-900 truncate" title={image.filename} style={{ lineHeight: '1.2' }}>
                         {image.filename}
@@ -751,29 +812,29 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   </Link>
                   
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-mono font-medum text-gray-900 truncate">
+                    <p className="text-[0.7em] font-mono font-mono font-medum text-gray-900 truncate">
                       {image.filename}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-[0.7em] font-mono text-gray-500">
                       {new Date(image.uploaded).toLocaleDateString()}
                     </p>
-                    <p className="text-xs text-gray-500">📁 {image.folder ? image.folder : '[none]'}</p>
-                    <div className="text-xs text-gray-500">
+                    <p className="text-[0.7em] font-mono text-gray-500">📁 {image.folder ? image.folder : '[none]'}</p>
+                    <div className="text-[0.7em] font-mono text-gray-500">
                       <AspectRatioDisplay imageId={image.id} />
                     </div>
                     {image.tags && image.tags.length > 0 ? (
-                      <p className="text-xs text-gray-500">🏷️ {image.tags.join(', ')}</p>
+                      <p className="text-[0.7em] font-mono text-gray-500">🏷️ {image.tags.join(', ')}</p>
                     ) : (
-                      <p className="text-xs text-gray-400">🏷️ [no tags]</p>
+                      <p className="text-[0.7em] font-mono text-gray-400">🏷️ [no tags]</p>
                     )}
                     <p
-                      className={`text-xs mt-1 ${image.altTag ? 'text-gray-600' : 'text-gray-400 italic'}`}
+                      className={`text-[0.7em] font-mono mt-1 ${image.altTag ? 'text-gray-600' : 'text-gray-400 italic'}`}
                       title={image.altTag || undefined}
                     >
                       {image.altTag ? `📝 ${image.altTag}` : 'No ALT text yet'}
                     </p>
                     {variationChildren.length > 0 && (
-                      <p className="text-xs text-blue-600 flex items-center gap-1 mt-1" title="Has variations">
+                      <p className="text-[0.7em] font-mono text-blue-600 flex items-center gap-1 mt-1" title="Has variations">
                         <Layers className="h-3.5 w-3.5" />
                         {variationChildren.length} variation{variationChildren.length > 1 ? 's' : ''}
                       </p>
@@ -781,7 +842,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     <button
                       onClick={() => generateAltTag(image.id)}
                       disabled={Boolean(altLoadingMap[image.id])}
-                      className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
+                      className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 text-[0.7em] font-mono rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
                     >
                       <Sparkles className="h-3.5 w-3.5" />
                       {altLoadingMap[image.id] ? 'Generating ALT...' : image.altTag ? 'Refresh' : 'Generate ALT text'}
@@ -830,12 +891,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       )}
 
       {showPagination && hasResults && (
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-6 text-xs text-gray-600 border-t border-gray-100 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-6 text-[0.7em] font-mono text-gray-600 border-t border-gray-100 pt-4">
           <div>
             {currentPageRangeLabel && (
               <p>Currently viewing uploads from {currentPageRangeLabel}</p>
             )}
-            <p className="text-xs text-gray-400">Page {pageIndex} of {totalPages}</p>
+            <p className="text-[0.7em] font-mono text-gray-400">Page {pageIndex} of {totalPages}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -873,12 +934,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 style={blurOverlayStyle}
                 onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
               />
-              <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100001] text-xs text-gray-800 border">
+              <div className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 bg-white rounded-lg shadow-xl z-[100001] text-[0.7em] font-mono text-gray-800 border">
               <div className="flex items-center justify-between p-3 border-b">
-                <div className="text-xs font-mono font-medum">Copy Image URL</div>
+                <div className="text-[0.7em] font-mono font-mono font-medum">Copy Image URL</div>
                 <button
                   onClick={(e) => { e.stopPropagation(); setOpenCopyMenu(null); }}
-                  className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                  className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-[0.7em] font-mono"
                   title="Close"
                 >
                   ×
@@ -888,12 +949,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 {Object.entries(getVariantUrls(modalImage)).map(([variant, url]) => (
                   <div key={variant} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
                     <div className="flex-1 min-w-0 mr-3">
-                      <div className="text-xs font-mono font-semibold text-gray-900 capitalize">{variant}</div>
-                      <div className="text-xs text-gray-500 truncate">{String(url)}</div>
+                      <div className="text-[0.7em] font-mono font-mono font-semibold text-gray-900 capitalize">{variant}</div>
+                      <div className="text-[0.7em] font-mono text-gray-500 truncate">{String(url)}</div>
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); copyToClipboard(String(url), variant); setOpenCopyMenu(null); }}
-                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-xs font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
+                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-[0.7em] font-mono font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
                     >
                       Copy
                     </button>
@@ -915,7 +976,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             
             <div className="space-y-4">
               <div>
-                <label htmlFor="edit-folder" className="block text-xs font-mono font-medum text-gray-700 mb-1">
+                <label htmlFor="edit-folder" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
                   Folder
                 </label>
                 <div>
@@ -930,16 +991,16 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     <input
                       value={newEditFolder}
                       onChange={(e) => setNewEditFolder(e.target.value)}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs mt-2"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-[0.7em] font-mono mt-2"
                       placeholder="Type new folder name"
                     />
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Select existing folder or create a new one</p>
+                <p className="text-[0.7em] font-mono text-gray-500 mt-1">Select existing folder or create a new one</p>
               </div>
               
               <div>
-                <label htmlFor="edit-tags" className="block text-xs font-mono font-medum text-gray-700 mb-1">
+                <label htmlFor="edit-tags" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
                   Tags
                 </label>
                 <input
@@ -948,22 +1009,22 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   placeholder="logo, header, banner (comma separated)"
                   value={editTags}
                   onChange={(e) => setEditTags(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-[0.7em] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">Separate tags with commas</p>
+                <p className="text-[0.7em] font-mono text-gray-500 mt-1">Separate tags with commas</p>
               </div>
             </div>
             
             <div className="flex justify-end space-x-3 mt-6">
               <button
                 onClick={cancelEdit}
-                className="px-4 py-2 text-xs text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 text-[0.7em] font-mono text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 onClick={() => saveEdit(editingImage)}
-                className="px-4 py-2 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                className="px-4 py-2 text-[0.7em] font-mono bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
                 Save Changes
               </button>

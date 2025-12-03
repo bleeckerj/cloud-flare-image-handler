@@ -29,6 +29,16 @@ interface GalleryImageSummary {
   parentId?: string | null;
 }
 
+const base64ToFile = (base64: string, filename: string, mimeType: string) => {
+  const byteString = atob(base64);
+  const len = byteString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = byteString.charCodeAt(i);
+  }
+  return new File([bytes], filename, { type: mimeType });
+};
+
 export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -46,6 +56,9 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
   const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
   const [selectedParentId, setSelectedParentId] = useState<string>('');
   const [parentOptions, setParentOptions] = useState<GalleryImageSummary[]>([]);
+  const [importUrl, setImportUrl] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const folderSelectOptions = useMemo(
     () => [
@@ -280,6 +293,37 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
     }
   };
 
+  const handleImportFromUrl = async () => {
+    if (!importUrl.trim()) return;
+    try {
+      setImportLoading(true);
+      setImportError(null);
+      const response = await fetch('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: importUrl.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to import image');
+      }
+      if (!data?.data || !data?.type || !data?.name) {
+        throw new Error('Invalid response from import service');
+      }
+      const file = base64ToFile(String(data.data), String(data.name), String(data.type));
+      setQueuedFiles((prev) => [...prev, file]);
+      if (!originalUrl.trim()) {
+        setOriginalUrl(String(data.originalUrl || importUrl.trim()));
+      }
+      setImportUrl('');
+    } catch (err) {
+      console.error('Import image failed', err);
+      setImportError(err instanceof Error ? err.message : 'Failed to import image');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
       <h2 className="text-xs font-mono  text-gray-900 mb-4">Upload Images</h2>
@@ -365,7 +409,8 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
           <p className="text-xs text-gray-500 mt-1">Reference to the original source URL</p>
         </div>
       </div>
-
+{/*  Not sure how you thought it ever made sense to show a huge list of filenames here...Leave this commented out
+A long list of filenames is not user friendly and essentially useless for selecting a parent image.
       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <label htmlFor="parent-select" className="block text-xs font-mono font-medium text-blue-900 mb-2">
           Upload variation of…
@@ -390,9 +435,8 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
         />
         <p className="text-xs text-blue-700 mt-2">
           Select an existing canonical image to group this upload as a variation. Leave empty to store a new master asset.
-        </p>
-      </div>
-
+        </p> 
+      </div> */}
       <div
         {...getRootProps()}
         className={clsx(
@@ -406,6 +450,33 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
           {isUploading ? "Uploading..." : isDragActive ? "Drop images here" : "Drag & drop images here"}
         </p>
         <p className="text-xs font-mono text-gray-500">{isUploading ? "Please wait while your images are being uploaded" : "or click to select files"}</p>
+      </div>
+
+      <div className="mt-4 p-4 border border-dashed rounded-lg bg-white/60">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-mono font-medium text-gray-900">Import image from URL</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            type="url"
+            value={importUrl}
+            onChange={(e) => setImportUrl(e.target.value)}
+            placeholder="https://example.com/asset.jpg"
+            className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            type="button"
+            onClick={handleImportFromUrl}
+            disabled={importLoading || !importUrl.trim()}
+            className="px-4 py-2 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            {importLoading ? 'Fetching…' : 'Fetch image'}
+          </button>
+        </div>
+        {importError && <p className="text-xs text-red-600 mt-1">{importError}</p>}
+        <p className="text-[11px] text-gray-500 mt-1">
+          We’ll download the image, add it to your queue, and prefill the “Original URL” field so you can finish tagging before uploading.
+        </p>
       </div>
 
       {/* Queued Files Section */}
