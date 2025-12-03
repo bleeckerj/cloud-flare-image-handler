@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getMultipleImageUrls, getCloudflareImageUrl } from '@/utils/imageUtils';
 import { useToast } from '@/components/Toast';
 import { Sparkles } from 'lucide-react';
+import FolderManagerButton from '@/components/FolderManagerButton';
 import MonoSelect from '@/components/MonoSelect';
 
 import { useParams } from 'next/navigation';
@@ -404,6 +405,10 @@ const [newFolderInput, setNewFolderInput] = useState('');
     }
   }, [childUploadFiles, childUploadFolder, childUploadTags, id, refreshImageList, toast]);
 
+  const handleFolderManagerChange = useCallback(async () => {
+    await refreshImageList();
+  }, [refreshImageList]);
+
   const handleThumbMouseMove = useCallback((url: string, label: string, evt: React.MouseEvent) => {
     setHoverPreview({
       url,
@@ -519,7 +524,14 @@ const [newFolderInput, setNewFolderInput] = useState('');
             </div>
 
             <div>
-              <p className="text-xs font-mono font-medum text-gray-700">Folder</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-mono font-medum text-gray-700">Folder</p>
+                <FolderManagerButton
+                  size="sm"
+                  label="Manage"
+                  onFoldersChanged={handleFolderManagerChange}
+                />
+              </div>
               <div className="mt-2">
                 <MonoSelect
                   value={folderSelect}

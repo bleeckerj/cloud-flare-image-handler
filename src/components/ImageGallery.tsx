@@ -5,6 +5,7 @@ import { Trash2, Copy, ExternalLink, Sparkles, Layers } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import MonoSelect from './MonoSelect';
+import FolderManagerButton from './FolderManagerButton';
 import { getCloudflareImageUrl, getMultipleImageUrls } from '@/utils/imageUtils';
 import { useToast } from './Toast';
 import { useImageAspectRatio } from '@/hooks/useImageAspectRatio';
@@ -553,9 +554,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           </div>
           
           <div>
-            <label htmlFor="folder-filter" className="block text-xs font-mono font-medum text-gray-700 mb-1">
-              Folder
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="folder-filter" className="block text-xs font-mono font-medum text-gray-700">
+                Folder
+              </label>
+              <FolderManagerButton onFoldersChanged={handleFoldersChanged} size="sm" label="Manage" />
+            </div>
             <MonoSelect
               id="folder-filter"
               value={selectedFolder}
@@ -986,3 +990,6 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 ImageGallery.displayName = 'ImageGallery';
 
 export default ImageGallery;
+  const handleFoldersChanged = async () => {
+    await fetchImages(true);
+  };
