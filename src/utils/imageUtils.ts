@@ -14,7 +14,7 @@ export const IMAGE_VARIANTS: ImageVariant[] = [
   { name: 'medium', value: 'w=600', description: 'Medium (600px width)', width: 600 },
   { name: 'large', value: 'w=900', description: 'Large (900px width)', width: 900 },
   { name: 'xlarge', value: 'w=1230', description: 'Extra Large (1230px width)', width: 1230 },
-  { name: 'thumbnail', value: 'thumbnail', description: 'Thumbnail preset', width: 150 },
+  { name: 'thumbnail', value: 'w=150', description: 'Thumbnail size (150px width)', width: 150 },
 ];
 
 /**

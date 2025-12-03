@@ -28,11 +28,11 @@ const HoverPreview: React.FC<HoverPreviewProps> = ({
   // Calculate optimal preview size based on original dimensions
   const getPreviewSize = () => {
     if (!dimensions) {
-      return { width: 300, height: 200 }; // fallback size
+      return { width: 400, height: 300 }; // fallback size
     }
 
-    const maxWidth = 400;
-    const maxHeight = 300;
+    const maxWidth = 600;
+    const maxHeight = 450;
     const aspectRatio = dimensions.width / dimensions.height;
 
     let previewWidth = maxWidth;
@@ -44,7 +44,7 @@ const HoverPreview: React.FC<HoverPreviewProps> = ({
     }
 
     // Ensure minimum size
-    const minSize = 150;
+    const minSize = 400;
     if (previewWidth < minSize) {
       previewWidth = minSize;
       previewHeight = minSize / aspectRatio;

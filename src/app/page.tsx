@@ -21,12 +21,12 @@ export default function Home() {
     <main className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <p className="text-sm font-mono text-gray-900 mb-2">
             Cloudflare Image Upload
-          </h1>
-          <p className="text-gray-600 mb-8">
-            Upload and manage your images for email blasts and websites
           </p>
+          {/* <p className="text-gray-600 mb-8">
+            Upload and manage your images for email blasts and websites
+          </p> */}
           
           <div className="grid gap-8">
             <ImageUploader onImageUploaded={handleImageUploaded} />

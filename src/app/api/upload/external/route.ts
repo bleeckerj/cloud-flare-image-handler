@@ -64,13 +64,16 @@ export async function POST(request: NextRequest) {
     const tags = formData.get('tags') as string;
     const description = formData.get('description') as string;
     const originalUrl = formData.get('originalUrl') as string;
+    const parentIdRaw = formData.get('parentId');
 
     const cleanFolder = folder && folder.trim() && folder !== 'undefined' ? folder.trim() : undefined;
     const cleanTags = tags && tags.trim() ? tags.trim().split(',').map(t => t.trim()).filter(Boolean) : [];
     const cleanDescription = description && description.trim() && description !== 'undefined' ? description.trim() : undefined;
     const cleanOriginalUrl = originalUrl && originalUrl.trim() && originalUrl !== 'undefined' ? originalUrl.trim() : undefined;
+    const parentIdValue = typeof parentIdRaw === 'string' ? parentIdRaw.trim() : '';
+    const cleanParentId = parentIdValue && parentIdValue !== 'undefined' ? parentIdValue : undefined;
 
-    const metadata = JSON.stringify({
+    const metadataPayload: Record<string, unknown> = {
       filename: file.name,
       uploadedAt: new Date().toISOString(),
       size: file.size,
@@ -79,7 +82,10 @@ export async function POST(request: NextRequest) {
       tags: cleanTags,
       description: cleanDescription,
       originalUrl: cleanOriginalUrl,
-    });
+      variationParentId: cleanParentId,
+    };
+
+    const metadata = JSON.stringify(metadataPayload);
 
     uploadFormData.append('metadata', metadata);
 
@@ -115,6 +121,7 @@ export async function POST(request: NextRequest) {
       tags: cleanTags,
       description: cleanDescription,
       originalUrl: cleanOriginalUrl,
+      parentId: cleanParentId,
     }));
 
   } catch (error) {

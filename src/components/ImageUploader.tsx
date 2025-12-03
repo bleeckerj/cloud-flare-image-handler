@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, X, CheckCircle, AlertCircle } from "lucide-react";
 import clsx from "clsx";
+import MonoSelect from "./MonoSelect";
 
 interface UploadedImage {
   id: string;
@@ -24,6 +25,8 @@ interface ImageUploaderProps {
 interface GalleryImageSummary {
   id: string;
   folder?: string | null;
+  filename?: string;
+  parentId?: string | null;
 }
 
 export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
@@ -41,6 +44,27 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
     "blog-posts",
   ]);
   const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const [selectedParentId, setSelectedParentId] = useState<string>('');
+  const [parentOptions, setParentOptions] = useState<GalleryImageSummary[]>([]);
+
+  const folderSelectOptions = useMemo(
+    () => [
+      { value: '', label: 'No folder' },
+      ...folders.map((folder) => ({ value: folder, label: folder }))
+    ],
+    [folders]
+  );
+
+  const canonicalSelectOptions = useMemo(() => {
+    const canonicalItems = parentOptions.map((option) => ({
+      value: option.id,
+      label: option.filename || option.id
+    }));
+    return [
+      { value: '', label: 'No parent (upload canonical image)' },
+      ...canonicalItems
+    ];
+  }, [parentOptions]);
 
   // Debug: Log current state
   console.log("ImageUploader - Selected folder:", selectedFolder);
@@ -63,6 +87,10 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
         setFolders((prev: string[]) =>
           Array.from(new Set<string>([...prev, ...fetched]))
         );
+        const canonical = (data.images as GalleryImageSummary[]).filter(
+          (img) => !img.parentId && img.id && img.filename
+        );
+        setParentOptions(canonical);
       }
     } catch (err) {
       console.warn("Failed to fetch folders for uploader", err);
@@ -108,6 +136,9 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
           }
           if (originalUrl && originalUrl.trim()) {
             formData.append("originalUrl", originalUrl.trim());
+          }
+          if (selectedParentId) {
+            formData.append("parentId", selectedParentId);
           }
 
           const response = await fetch("/api/upload", {
@@ -179,8 +210,9 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
       setTags("");
       setDescription("");
       setOriginalUrl("");
+      setSelectedParentId("");
     },
-    [selectedFolder, tags, description, originalUrl, onImageUploaded, fetchFolders]
+    [selectedFolder, tags, description, originalUrl, selectedParentId, onImageUploaded, fetchFolders]
   );
 
   // Handle drag and drop - either queue or upload immediately
@@ -250,28 +282,23 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">Upload Images</h2>
+      <h2 className="text-xs font-mono  text-gray-900 mb-4">Upload Images</h2>
 
       {/* Organization Controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
         <div>
-          <label htmlFor="folder-select" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="folder-select" className="block text-xs fonto-mono text-gray-700 mb-2">
             Folder (Optional)
           </label>
           <div className="flex space-x-2">
-            <select
+            <MonoSelect
               id="folder-select"
               value={selectedFolder}
-              onChange={(e) => setSelectedFolder(e.target.value)}
-              className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">No folder</option>
-              {folders.map((folder) => (
-                <option key={folder} value={folder}>
-                  {folder}
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedFolder}
+              options={folderSelectOptions}
+              placeholder="Choose folder"
+              className="flex-1"
+            />
             <input
               type="text"
               placeholder="New folder"
@@ -287,14 +314,14 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
                   setNewFolder("");
                 }
               }}
-              className="w-32 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-32 border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <p className="text-xs text-gray-500 mt-1">Press Enter to create new folder</p>
         </div>
 
         <div>
-          <label htmlFor="tags-input" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="tags-input" className="block text-xs font-mono font-medium text-gray-700 mb-2">
             Tags (Optional)
           </label>
           <input
@@ -303,13 +330,13 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
             placeholder="logo, header, banner (comma separated)"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p className="text-xs text-gray-500 mt-1">Separate tags with commas</p>
         </div>
 
         <div>
-          <label htmlFor="description-input" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="description-input" className="block text-xs font-mono font-medium text-gray-700 mb-2">
             Description (Optional)
           </label>
           <textarea
@@ -318,13 +345,13 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-vertical"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-vertical"
           />
           <p className="text-xs text-gray-500 mt-1">Optional description for the image</p>
         </div>
 
         <div>
-          <label htmlFor="original-url-input" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="original-url-input" className="block text-xs font-mono font-medium text-gray-700 mb-2">
             Original URL (Optional)
           </label>
           <input
@@ -333,37 +360,63 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
             placeholder="https://example.com/original-image.jpg"
             value={originalUrl}
             onChange={(e) => setOriginalUrl(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p className="text-xs text-gray-500 mt-1">Reference to the original source URL</p>
         </div>
       </div>
 
+      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <label htmlFor="parent-select" className="block text-xs font-mono font-medium text-blue-900 mb-2">
+          Upload variation of…
+        </label>
+        <MonoSelect
+          id="parent-select"
+          value={selectedParentId}
+          onChange={setSelectedParentId}
+          options={
+            parentOptions.length === 0
+              ? [
+                  { value: '', label: 'No parent (upload canonical image)' },
+                  {
+                    value: '__no-parent-notice__',
+                    label: 'Upload a base image first to assign variations',
+                    disabled: true
+                  }
+                ]
+              : canonicalSelectOptions
+          }
+          placeholder="Select parent image"
+        />
+        <p className="text-xs text-blue-700 mt-2">
+          Select an existing canonical image to group this upload as a variation. Leave empty to store a new master asset.
+        </p>
+      </div>
+
       <div
         {...getRootProps()}
         className={clsx(
-          "border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer",
+          "border-2 border-dashed rounded-lg p-2 text-center transition-colors cursor-pointer",
           isDragActive ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-gray-400"
         )}
       >
         <input {...getInputProps()} />
-        <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-        <p className="text-lg font-medium text-gray-900 mb-2">
+        <Upload className="mx-auto h-8 w-8 text-gray-400 mb-4" />
+        <p className="text-xs font-mono font-medium text-gray-900 mb-2">
           {isUploading ? "Uploading..." : isDragActive ? "Drop images here" : "Drag & drop images here"}
         </p>
-        <p className="text-gray-500">{isUploading ? "Please wait while your images are being uploaded" : "or click to select files"}</p>
-        <p className="text-sm text-gray-400 mt-2">Supports: JPEG, PNG, GIF, WebP • Files will be queued for upload</p>
+        <p className="text-xs font-mono text-gray-500">{isUploading ? "Please wait while your images are being uploaded" : "or click to select files"}</p>
       </div>
 
       {/* Queued Files Section */}
       {queuedFiles.length > 0 && (
         <div className="mt-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Queued Files ({queuedFiles.length})</h3>
+            <p className="text-xs font-mono font-medium text-gray-900">Queued Files ({queuedFiles.length})</p>
             <div className="flex space-x-2">
               <button
                 onClick={clearQueue}
-                className="px-3 py-1 text-sm text-gray-600 hover:text-red-600 border border-gray-300 rounded-md hover:border-red-300"
+                className="px-3 py-1 text-xs text-gray-600 hover:text-red-600 border border-gray-300 rounded-md hover:border-red-300"
                 disabled={isUploading}
               >
                 Clear Queue
@@ -384,7 +437,7 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {queuedFiles.map((file, index) => (
               <div key={`${file.name}-${index}`} className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                <p className="text-xs font-mono font-medium text-gray-900 truncate">{file.name}</p>
                 <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                 <button onClick={() => setQueuedFiles((prev) => prev.filter((_, i) => i !== index))} className="mt-1 text-xs text-red-600 hover:text-red-800" disabled={isUploading}>
                   Remove
@@ -408,7 +461,7 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
                     {image.status === "error" && <AlertCircle className="h-5 w-5 text-red-500" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{image.filename}</p>
+                    <p className="text-xs font-mono font-medium text-gray-900 truncate">{image.filename}</p>
                     {image.folder && <p className="text-xs text-gray-500">📁 {image.folder}</p>}
                     {image.description && <p className="text-xs text-gray-500">📝 {image.description}</p>}
                     {image.originalUrl && (

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cleanString, parseCloudflareMetadata } from '@/utils/cloudflareMetadata';
 
 export async function PATCH(
   request: NextRequest,
@@ -18,7 +19,7 @@ export async function PATCH(
 
     const { id: imageId } = await params;
     const body = await request.json();
-    const { folder, tags, description, originalUrl } = body;
+    const { folder, tags, description, originalUrl, parentId } = body;
     
     if (!imageId) {
       return NextResponse.json(
@@ -27,20 +28,76 @@ export async function PATCH(
       );
     }
 
-    // Clean up folder and tags
-    const cleanFolder = folder && folder.trim() && folder !== 'undefined' ? folder.trim() : undefined;
-    const cleanTags = tags && Array.isArray(tags) ? tags.filter((t: string) => t && t.trim()) : [];
-    const cleanDescription = description && description.trim() && description !== 'undefined' ? description.trim() : undefined;
-    const cleanOriginalUrl = originalUrl && originalUrl.trim() && originalUrl !== 'undefined' ? originalUrl.trim() : undefined;
+    const folderProvided = Object.prototype.hasOwnProperty.call(body, 'folder');
+    const tagsProvided = Object.prototype.hasOwnProperty.call(body, 'tags');
+    const descriptionProvided = Object.prototype.hasOwnProperty.call(body, 'description');
+    const originalUrlProvided = Object.prototype.hasOwnProperty.call(body, 'originalUrl');
 
-    // Create updated metadata object (not JSON string)
+    const cleanFolder = cleanString(typeof folder === 'string' ? folder : undefined);
+    const cleanDescription = cleanString(typeof description === 'string' ? description : undefined);
+    const cleanOriginalUrl = cleanString(typeof originalUrl === 'string' ? originalUrl : undefined);
+    const cleanTags = (() => {
+      if (Array.isArray(tags)) {
+        return tags
+          .map((t: string) => cleanString(t))
+          .filter((t): t is string => typeof t === 'string');
+      }
+      if (typeof tags === 'string') {
+        return tags
+          .split(',')
+          .map(tag => cleanString(tag))
+          .filter((t): t is string => typeof t === 'string');
+      }
+      return [];
+    })();
+
+    const fetchedImageResponse = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/images/v1/${imageId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+        },
+      }
+    );
+
+    const fetchedImageResult = await fetchedImageResponse.json();
+
+    if (!fetchedImageResponse.ok) {
+      console.error('Cloudflare API error (fetch existing image):', fetchedImageResult);
+      return NextResponse.json(
+        { error: fetchedImageResult.errors?.[0]?.message || 'Failed to fetch existing image metadata' },
+        { status: fetchedImageResponse.status }
+      );
+    }
+
+    const existingMeta = parseCloudflareMetadata(fetchedImageResult.result?.meta);
+    const parentProvided = Object.prototype.hasOwnProperty.call(body, 'parentId');
+    const cleanParentId = cleanString(typeof parentId === 'string' ? parentId : '');
+
     const metadata = {
-      folder: cleanFolder,
-      tags: cleanTags,
-      description: cleanDescription,
-      originalUrl: cleanOriginalUrl,
-      updatedAt: new Date().toISOString()
-    };
+      ...existingMeta,
+      updatedAt: new Date().toISOString(),
+    } as Record<string, unknown>;
+
+    if (folderProvided) {
+      metadata.folder = cleanFolder;
+    }
+
+    if (tagsProvided) {
+      metadata.tags = cleanTags;
+    }
+
+    if (descriptionProvided) {
+      metadata.description = cleanDescription;
+    }
+
+    if (originalUrlProvided) {
+      metadata.originalUrl = cleanOriginalUrl;
+    }
+
+    if (parentProvided) {
+      metadata.variationParentId = cleanParentId;
+    }
 
     // Update image metadata in Cloudflare using JSON body
     const response = await fetch(
@@ -65,12 +122,20 @@ export async function PATCH(
       );
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      folder: cleanFolder, 
-      tags: cleanTags,
-      description: cleanDescription,
-      originalUrl: cleanOriginalUrl
+    const finalParentId = metadata.variationParentId as string | undefined;
+
+    const finalFolder = metadata.folder as string | undefined;
+    const finalTags = Array.isArray(metadata.tags) ? metadata.tags : [];
+    const finalDescription = metadata.description as string | undefined;
+    const finalOriginalUrl = metadata.originalUrl as string | undefined;
+
+    return NextResponse.json({
+      success: true,
+      folder: finalFolder,
+      tags: finalTags,
+      description: finalDescription,
+      originalUrl: finalOriginalUrl,
+      parentId: finalParentId,
     });
 
   } catch (error) {

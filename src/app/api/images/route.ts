@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cleanString, parseCloudflareMetadata } from '@/utils/cloudflareMetadata';
 
 type CloudflareImageResponse = {
   id: string;
@@ -6,15 +7,6 @@ type CloudflareImageResponse = {
   uploaded: string;
   variants: string[];
   meta?: unknown;
-};
-
-type ImageMeta = {
-  folder?: string;
-  tags?: string[];
-  description?: string;
-  originalUrl?: string;
-  altTag?: string;
-  filename?: string;
 };
 
 export async function GET() {
@@ -56,39 +48,27 @@ export async function GET() {
       : [];
 
     const images = apiImages.map((image) => {
-      // Try to parse metadata if it exists
-      let parsedMeta: ImageMeta | null = null;
-      if (image.meta) {
-        if (typeof image.meta === 'string') {
-          try {
-            parsedMeta = JSON.parse(image.meta) as ImageMeta;
-          } catch (parseError) {
-            console.warn('Failed to parse image metadata as JSON:', parseError);
-          }
-        } else if (typeof image.meta === 'object') {
-          parsedMeta = image.meta as ImageMeta;
-        }
-      }
-
-      // Clean up folder and tags
-      const cleanFolder = parsedMeta?.folder && parsedMeta.folder !== 'undefined' ? parsedMeta.folder : undefined;
-      const cleanTags = Array.isArray(parsedMeta?.tags)
+      const parsedMeta = parseCloudflareMetadata(image.meta);
+      const cleanFolder = parsedMeta.folder && parsedMeta.folder !== 'undefined' ? parsedMeta.folder : undefined;
+      const cleanTags = Array.isArray(parsedMeta.tags)
         ? parsedMeta.tags.filter((tag): tag is string => Boolean(tag) && tag !== 'undefined')
         : [];
-      const cleanDescription = parsedMeta?.description && parsedMeta.description !== 'undefined' ? parsedMeta.description : undefined;
-      const cleanOriginalUrl = parsedMeta?.originalUrl && parsedMeta.originalUrl !== 'undefined' ? parsedMeta.originalUrl : undefined;
-      const cleanAltTag = parsedMeta?.altTag && parsedMeta.altTag !== 'undefined' ? parsedMeta.altTag : undefined;
+      const cleanDescription = parsedMeta.description && parsedMeta.description !== 'undefined' ? parsedMeta.description : undefined;
+      const cleanOriginalUrl = parsedMeta.originalUrl && parsedMeta.originalUrl !== 'undefined' ? parsedMeta.originalUrl : undefined;
+      const cleanAltTag = parsedMeta.altTag && parsedMeta.altTag !== 'undefined' ? parsedMeta.altTag : undefined;
+      const parentId = cleanString(parsedMeta.variationParentId);
 
       return {
         id: image.id,
-        filename: image.filename || parsedMeta?.filename || 'Unknown',
+        filename: image.filename || parsedMeta.filename || 'Unknown',
         uploaded: image.uploaded,
         variants: image.variants,
         folder: cleanFolder,
         tags: cleanTags,
         description: cleanDescription,
         originalUrl: cleanOriginalUrl,
-        altTag: cleanAltTag
+        altTag: cleanAltTag,
+        parentId,
       };
     });
 

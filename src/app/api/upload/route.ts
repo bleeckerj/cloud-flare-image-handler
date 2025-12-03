@@ -53,15 +53,18 @@ export async function POST(request: NextRequest) {
     const tags = formData.get('tags') as string;
     const description = formData.get('description') as string;
     const originalUrl = formData.get('originalUrl') as string;
+    const parentIdRaw = formData.get('parentId');
     
     // Clean up values - handle empty strings and "undefined" strings
     const cleanFolder = folder && folder.trim() && folder !== 'undefined' ? folder.trim() : undefined;
     const cleanTags = tags && tags.trim() ? tags.trim().split(',').map(t => t.trim()).filter(t => t) : [];
     const cleanDescription = description && description.trim() && description !== 'undefined' ? description.trim() : undefined;
     const cleanOriginalUrl = originalUrl && originalUrl.trim() && originalUrl !== 'undefined' ? originalUrl.trim() : undefined;
+    const parentIdValue = typeof parentIdRaw === 'string' ? parentIdRaw.trim() : '';
+    const cleanParentId = parentIdValue && parentIdValue !== 'undefined' ? parentIdValue : undefined;
 
     // Add metadata including organization info
-    const metadata = JSON.stringify({
+    const metadataPayload: Record<string, unknown> = {
       filename: file.name,
       uploadedAt: new Date().toISOString(),
       size: file.size,
@@ -69,8 +72,11 @@ export async function POST(request: NextRequest) {
       folder: cleanFolder,
       tags: cleanTags,
       description: cleanDescription,
-      originalUrl: cleanOriginalUrl
-    });
+      originalUrl: cleanOriginalUrl,
+      variationParentId: cleanParentId,
+    };
+
+    const metadata = JSON.stringify(metadataPayload);
     uploadFormData.append('metadata', metadata);
 
     const cloudflareResponse = await fetch(
@@ -107,7 +113,8 @@ export async function POST(request: NextRequest) {
       folder: cleanFolder,
       tags: cleanTags,
       description: cleanDescription,
-      originalUrl: cleanOriginalUrl
+      originalUrl: cleanOriginalUrl,
+      parentId: cleanParentId,
     });
 
   } catch (error) {
