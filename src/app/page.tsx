@@ -18,20 +18,18 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-gray-50 overscroll-none">
       <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <p className="text-sm font-mono text-gray-900 mb-2">
-            Cloudflare Image Upload
-          </p>
-          {/* <p className="text-gray-600 mb-8">
-            Upload and manage your images for email blasts and websites
-          </p> */}
-          
-          <div className="grid gap-8">
-            <ImageUploader onImageUploaded={handleImageUploaded} />
+        <div className="max-w-6xl mx-auto space-y-8">
+          <section className="z-999" id="gallery-section">
             <ImageGallery ref={galleryRef} refreshTrigger={refreshTrigger} />
-          </div>
+          </section>
+          <section id="uploader-section" className="max-w-4xl">
+            <p className="text-sm font-mono text-gray-900 mb-2">
+              Cloudflare Image Upload
+            </p>
+            <ImageUploader onImageUploaded={handleImageUploaded} />
+          </section>
         </div>
       </div>
     </main>

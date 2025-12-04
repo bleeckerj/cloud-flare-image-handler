@@ -1,0 +1,64 @@
+import { describe, it, expect } from 'vitest';
+import { filterImagesForGallery, GalleryImage } from '@/utils/galleryFilter';
+
+let uniqueCounter = 0;
+const makeImage = (overrides: Partial<GalleryImage> = {}): GalleryImage => ({
+  id: overrides.id ?? `image-${uniqueCounter++}`,
+  filename: overrides.filename ?? 'sample.png',
+  uploaded: overrides.uploaded ?? '2025-01-01T00:00:00.000Z',
+  variants: overrides.variants ?? [],
+  folder: overrides.folder,
+  tags: overrides.tags,
+  altTag: overrides.altTag,
+  parentId: overrides.parentId
+});
+
+describe('filterImagesForGallery', () => {
+  const images: GalleryImage[] = [
+    makeImage({
+      id: '1',
+      filename: 'client-olalekan-hero.png',
+      tags: ['Olalekan', 'client'],
+      folder: 'clients'
+    }),
+    makeImage({
+      id: '2',
+      filename: 'internal-sketch.png',
+      tags: ['sketch'],
+      altTag: 'Ola brainstorming session',
+      folder: 'internal'
+    }),
+    makeImage({
+      id: '3',
+      filename: 'variant-child.png',
+      tags: ['children'],
+      parentId: 'parent-1',
+      folder: 'clients'
+    })
+  ];
+
+  it('matches partial tag search (case insensitive)', () => {
+    const result = filterImagesForGallery(images, {
+      selectedFolder: 'all',
+      selectedTag: '',
+      searchTerm: 'Ola',
+      onlyCanonical: false
+    });
+
+    const ids = result.map((img) => img.id);
+    expect(ids).toContain('1');
+    expect(ids).toContain('2'); // alt tag should match as well
+  });
+
+  it('respects canonical-only filter even when search matches', () => {
+    const result = filterImagesForGallery(images, {
+      selectedFolder: 'all',
+      selectedTag: '',
+      searchTerm: 'child',
+      onlyCanonical: true
+    });
+
+    const ids = result.map((img) => img.id);
+    expect(ids).not.toContain('3');
+  });
+});

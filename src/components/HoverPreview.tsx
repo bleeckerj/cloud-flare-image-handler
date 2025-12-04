@@ -13,6 +13,8 @@ interface HoverPreviewProps {
   dimensions?: { width: number; height: number };
 }
 
+const VIEWPORT_PADDING = 20;
+
 const HoverPreview: React.FC<HoverPreviewProps> = ({
   imageId,
   filename,
@@ -27,12 +29,19 @@ const HoverPreview: React.FC<HoverPreviewProps> = ({
 
   // Calculate optimal preview size based on original dimensions
   const getPreviewSize = () => {
+    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const maxAllowedWidth = Math.max(200, viewportWidth - VIEWPORT_PADDING * 2);
+    const maxAllowedHeight = Math.max(160, viewportHeight - VIEWPORT_PADDING * 2);
+
     if (!dimensions) {
-      return { width: 400, height: 300 }; // fallback size
+      const fallbackWidth = Math.min(400, maxAllowedWidth);
+      const fallbackHeight = Math.min(300, maxAllowedHeight);
+      return { width: fallbackWidth, height: fallbackHeight };
     }
 
-    const maxWidth = 600;
-    const maxHeight = 450;
+    const maxWidth = Math.min(600, maxAllowedWidth);
+    const maxHeight = Math.min(450, maxAllowedHeight);
     const aspectRatio = dimensions.width / dimensions.height;
 
     let previewWidth = maxWidth;
@@ -43,15 +52,14 @@ const HoverPreview: React.FC<HoverPreviewProps> = ({
       previewWidth = maxHeight * aspectRatio;
     }
 
-    // Ensure minimum size
-    const minSize = 400;
-    if (previewWidth < minSize) {
-      previewWidth = minSize;
-      previewHeight = minSize / aspectRatio;
+    // Ensure preview fits viewport
+    if (previewWidth > maxAllowedWidth) {
+      previewWidth = maxAllowedWidth;
+      previewHeight = previewWidth / aspectRatio;
     }
-    if (previewHeight < minSize) {
-      previewHeight = minSize;
-      previewWidth = minSize * aspectRatio;
+    if (previewHeight > maxAllowedHeight) {
+      previewHeight = maxAllowedHeight;
+      previewWidth = previewHeight * aspectRatio;
     }
 
     return { 
@@ -66,7 +74,7 @@ const HoverPreview: React.FC<HoverPreviewProps> = ({
   useEffect(() => {
     if (!isVisible || !previewRef.current) return;
 
-    const padding = 20; // Distance from cursor and viewport edges
+    const padding = VIEWPORT_PADDING; // Distance from cursor and viewport edges
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const previewWidth = previewSize.width;

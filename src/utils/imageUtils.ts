@@ -39,7 +39,12 @@ export function getCloudflareImageUrl(
   const predefinedVariant = IMAGE_VARIANTS.find(v => v.name === variant);
   const variantValue = predefinedVariant ? predefinedVariant.value : variant;
 
-  return `https://imagedelivery.net/${hash}/${imageId}/${variantValue}`;
+  const includesParams = variantValue.includes('?');
+  const base = `https://imagedelivery.net/${hash}/${imageId}/${variantValue}`;
+  if (variantValue.includes('format=')) {
+    return base;
+  }
+  return `${base}${includesParams ? '&' : '?'}format=webp`;
 }
 
 /**

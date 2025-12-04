@@ -1,6 +1,6 @@
 "use client";
 
-import React, { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { getMultipleImageUrls, getCloudflareImageUrl } from '@/utils/imageUtils';
@@ -8,6 +8,8 @@ import { useToast } from '@/components/Toast';
 import { Sparkles } from 'lucide-react';
 import FolderManagerButton from '@/components/FolderManagerButton';
 import MonoSelect from '@/components/MonoSelect';
+import { useDropzone } from 'react-dropzone';
+import { downloadImageToFile, formatDownloadFileName } from '@/utils/downloadUtils';
 
 import { useParams } from 'next/navigation';
 
@@ -23,6 +25,25 @@ interface CloudflareImage {
   parentId?: string;
   linkedAssetId?: string;
 }
+
+const DEFAULT_LIST_VARIANT = 'original';
+
+const ensureWebpFormat = (inputUrl: string) => {
+  const parts = inputUrl.split('?');
+  const base = parts[0];
+  const params = new URLSearchParams(parts[1] || '');
+  params.set('format', 'webp');
+  return `${base}?${params.toString()}`;
+};
+
+const formatEntriesAsYaml = (entries: { url: string; altText: string }[]) => {
+  const lines = ['imagesFromGridDirectory:'];
+  entries.forEach((entry) => {
+    lines.push(`  - url: ${entry.url}`);
+    lines.push(`    altText: ${JSON.stringify(entry.altText ?? '')}`);
+  });
+  return lines.join('\n');
+};
 
 export default function ImageDetailPage() {
   const params = useParams();
@@ -54,7 +75,22 @@ export default function ImageDetailPage() {
     x: number;
     y: number;
   } | null>(null);
-  const childUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const onVariantDrop = useCallback((acceptedFiles: File[]) => {
+    if (acceptedFiles.length === 0) return;
+    setChildUploadFiles((prev) => [...prev, ...acceptedFiles]);
+  }, []);
+
+  const {
+    getRootProps: getVariantDropzoneProps,
+    getInputProps: getVariantInputProps,
+    isDragActive: isVariantDragActive
+  } = useDropzone({
+    onDrop: onVariantDrop,
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp', '.svg']
+    },
+    multiple: true
+  });
 
   const [folderSelect, setFolderSelect] = useState('');
   const [tagsInput, setTagsInput] = useState('');
@@ -63,7 +99,7 @@ export default function ImageDetailPage() {
   const [saving, setSaving] = useState(false);
   const [uniqueFolders, setUniqueFolders] = useState<string[]>([]);
 const [newFolderInput, setNewFolderInput] = useState('');
-  const [variantModalState, setVariantModalState] = useState<{ target: CloudflareImage; mode: 'single' | 'list' } | null>(null);
+  const [variantModalState, setVariantModalState] = useState<{ target: CloudflareImage } | null>(null);
 
   useEffect(() => {
     setVariationPage(1);
@@ -81,6 +117,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
         setOriginalUrlInput(found.originalUrl || '');
         setReassignParentId(found.parentId || '');
         setChildUploadFolder(found.folder || '');
+        setChildUploadTags(Array.isArray(found.tags) ? found.tags.join(', ') : '');
       } else {
         setFolderSelect('');
         setTagsInput('');
@@ -88,6 +125,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
         setOriginalUrlInput('');
         setReassignParentId('');
         setChildUploadFolder('');
+        setChildUploadTags('');
       }
       const folders = Array.from(
         new Set(
@@ -259,11 +297,11 @@ const [newFolderInput, setNewFolderInput] = useState('');
     [uniqueFolders]
   );
 
-  const copyToClipboard = async (text: string, label?: string) => {
+  const copyToClipboard = async (text: string, label?: string, successMessage?: string) => {
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
-        toast.push(label ? `${label} URL copied` : 'URL copied to clipboard');
+        toast.push(successMessage || (label ? `${label} URL copied` : 'Text copied to clipboard'));
         return;
       }
 
@@ -277,17 +315,31 @@ const [newFolderInput, setNewFolderInput] = useState('');
       textArea.select();
       try {
         document.execCommand('copy');
-        toast.push(label ? `${label} URL copied` : 'URL copied to clipboard');
+        toast.push(successMessage || (label ? `${label} URL copied` : 'Text copied to clipboard'));
       } catch (e) {
         console.error('Fallback copy failed', e);
-        prompt('Copy this URL manually:', text);
+        prompt('Copy this text manually:', text);
       }
       document.body.removeChild(textArea);
     } catch (err) {
       console.error('Failed to copy', err);
-      prompt('Copy this URL manually:', text);
+      prompt('Copy this text manually:', text);
     }
   };
+
+  const handleCopyList = useCallback(async () => {
+    if (!image) {
+      toast.push('Image data not ready');
+      return;
+    }
+    const buildEntry = (img: CloudflareImage) => ({
+      url: ensureWebpFormat(getCloudflareImageUrl(img.id, DEFAULT_LIST_VARIANT)),
+      altText: img.description || ''
+    });
+    const entries = [buildEntry(image), ...displayedVariations.map(buildEntry)];
+    const payload = formatEntriesAsYaml(entries);
+    await copyToClipboard(payload, undefined, 'Variant list copied');
+  }, [copyToClipboard, displayedVariations, image]);
 
   const patchParentAssignment = useCallback(
     async (targetId: string, parentIdValue: string) => {
@@ -353,6 +405,40 @@ const [newFolderInput, setNewFolderInput] = useState('');
     [patchParentAssignment, toast]
   );
 
+  const handleDeleteChild = useCallback(async (childId: string) => {
+    if (!confirm('Delete this variation permanently?')) return;
+    try {
+      const response = await fetch(`/api/images/${childId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error || 'Failed to delete image');
+      }
+      toast.push('Image deleted');
+      setAllImages(prev => prev.filter(img => img.id !== childId));
+      setVariationPage(1);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete image';
+      toast.push(message);
+    }
+  }, [toast]);
+
+  const handleDeleteParent = useCallback(async () => {
+    if (!image) return;
+    if (!confirm('Delete this image permanently? All variations will be detached.')) return;
+    try {
+      const response = await fetch(`/api/images/${image.id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error || 'Failed to delete image');
+      }
+      toast.push('Image deleted');
+      window.location.href = '/';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete image';
+      toast.push(message);
+    }
+  }, [image, toast]);
+
   const handleAdoptImage = useCallback(async () => {
     if (!adoptImageId) {
       return;
@@ -389,11 +475,13 @@ const [newFolderInput, setNewFolderInput] = useState('');
     if (!id || childUploadFiles.length === 0) return;
     setChildUploadLoading(true);
     try {
+      const defaultFolder = childUploadFolder.trim() || image?.folder || '';
+      const defaultTags = childUploadTags.trim() || (image?.tags ? image.tags.join(', ') : '');
       for (const file of childUploadFiles) {
         const formData = new FormData();
         formData.append('file', file);
-        if (childUploadFolder.trim()) formData.append('folder', childUploadFolder.trim());
-        if (childUploadTags.trim()) formData.append('tags', childUploadTags.trim());
+        if (defaultFolder) formData.append('folder', defaultFolder);
+        if (defaultTags) formData.append('tags', defaultTags);
         formData.append('parentId', id);
 
         const response = await fetch('/api/upload', {
@@ -482,15 +570,15 @@ const [newFolderInput, setNewFolderInput] = useState('');
   }
 
   return (
-    <div className="p-6 relative">
-      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
+    <div id="image-detail-page" className="p-6 relative">
+      <div id="image-detail-container" className="max-w-4xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
         <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
+          <div id="detail-navigation" className="flex items-center justify-between mb-4">
             <Link href="/" className="text-xs text-blue-600 underline">
               ← Back to gallery
             </Link>
           </div>
-          <div className="w-full mb-4">
+          <div id="image-hero-section" className="w-full mb-4">
             <div className="relative w-full aspect-[3/2] bg-gray-100 rounded">
               <Image
                 src={originalDeliveryUrl}
@@ -503,14 +591,14 @@ const [newFolderInput, setNewFolderInput] = useState('');
             </div>
           </div>
 
-          <div className="mb-6">
+          <div id="image-summary-section" className="mb-6">
             <p className="text-xs mono font-semibold text-gray-900">{image.filename || 'Image'}</p>
             <p className="text-xs text-gray-500 mt-1">
               Uploaded {new Date(image.uploaded).toLocaleString()}
             </p>
           </div>
 
-          <div className="space-y-4">
+          <div id="image-metadata-section" className="space-y-4">
             <div id="description-section">
               <p className="text-xs font-mono font-medum text-gray-700">Description</p>
               <textarea
@@ -693,26 +781,34 @@ const [newFolderInput, setNewFolderInput] = useState('');
               )}
 
               <div id="variations-section" className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-mono font-medum text-gray-700">
-                    {isChildImage ? 'Other variations from this parent' : 'Variations'}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs text-gray-500">
-                      {variationCount}{' '}
-                      {isChildImage ? 'other variation' : 'variation'}
-                      {variationCount !== 1 ? 's' : ''}
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-mono font-medum text-gray-700">
+                      {isChildImage ? 'Other variations from this parent' : 'Variations'}
                     </p>
-                    {!isChildImage && (
-                      <button
-                        onClick={() => setVariantModalState({ target: image, mode: 'list' })}
-                        className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-blue-600 hover:bg-blue-50"
-                      >
-                        Copy list
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-gray-500">
+                        {variationCount}{' '}
+                        {isChildImage ? 'other variation' : 'variation'}
+                        {variationCount !== 1 ? 's' : ''}
+                      </p>
+                      {!isChildImage && (
+                        <>
+                        <button
+                          onClick={handleCopyList}
+                          className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-blue-600 hover:bg-blue-50"
+                        >
+                          Copy list
+                        </button>
+                        <button
+                          onClick={handleDeleteParent}
+                          className="px-2 py-1 text-[11px] border border-red-300 rounded-md text-red-600 hover:bg-red-50"
+                        >
+                          Delete image
+                        </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
 
                 {variationCount === 0 ? (
                   <p className="text-xs text-gray-500">
@@ -730,7 +826,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
                       >
                         <Link
                           href={`/images/${child.id}`}
-                          className="w-16 h-12 relative rounded overflow-hidden bg-gray-100 block"
+                          className="w-32 h-24 relative rounded overflow-hidden bg-gray-100 block"
                           onMouseMove={(e) => handleThumbMouseMove(getCloudflareImageUrl(child.id, 'w=600'), child.filename || 'Variation', e)}
                         >
                           <Image
@@ -748,7 +844,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
                             Uploaded {new Date(child.uploaded).toLocaleDateString()}
                           </p>
                           <button
-                            onClick={() => setVariantModalState({ target: child, mode: 'single' })}
+                            onClick={() => setVariantModalState({ target: child })}
                             className="inline-flex items-center gap-1 text-xs text-blue-600 underline"
                           >
                             View sizes
@@ -770,6 +866,12 @@ const [newFolderInput, setNewFolderInput] = useState('');
                               {childDetachingId === child.id ? 'Detaching…' : 'Detach'}
                             </button>
                           )}
+                          <button
+                            onClick={() => handleDeleteChild(child.id)}
+                            className="px-3 py-1 text-[11px] border border-red-300 text-red-600 rounded-md hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -891,48 +993,24 @@ const [newFolderInput, setNewFolderInput] = useState('');
                   )}
                 </div>
 
-                <div id="upload-variation-section" className="space-y-2 border border-dashed rounded-lg p-3 bg-blue-50">
+                <div id="upload-variation-section" className="space-y-3 border border-dashed rounded-lg p-3 bg-blue-50">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
                       <h3 className="text-xs font-mono font-medum text-gray-800">Upload a new variation</h3>
-                      <p className="text-xs text-gray-600">Files will be linked under this image.</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        ref={childUploadInputRef}
-                        type="file"
-                        multiple
-                        onChange={(e) => setChildUploadFiles(Array.from(e.target.files || []))}
-                        className="hidden"
-                        id="detail-upload-input"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => childUploadInputRef.current?.click()}
-                        className="px-3 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-100"
-                      >
-                        Choose files
-                      </button>
-                      {childUploadFiles.length > 0 && (
-                        <span className="text-xs text-gray-600">{childUploadFiles.length} selected</span>
-                      )}
+                      <p className="text-xs text-gray-600">Files automatically inherit this image's folder and tags.</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      placeholder="Folder (optional)"
-                      value={childUploadFolder}
-                      onChange={(e) => setChildUploadFolder(e.target.value)}
-                      className="border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Tags (comma separated, optional)"
-                      value={childUploadTags}
-                      onChange={(e) => setChildUploadTags(e.target.value)}
-                      className="border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                  <div
+                    {...getVariantDropzoneProps()}
+                    className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer ${isVariantDragActive ? 'border-blue-500 bg-blue-100' : 'border-gray-300 bg-white hover:border-gray-400'}`}
+                  >
+                    <input {...getVariantInputProps()} />
+                    <p className="text-xs font-mono text-gray-900 mb-1">Drag & drop images here</p>
+                    <p className="text-[11px] text-gray-500">or click to browse files</p>
+                  </div>
+                  <div className="text-[11px] text-gray-600 bg-white/70 border border-gray-200 rounded-md p-2">
+                    <p>Folder: <span className="font-mono">{childUploadFolder || image.folder || '[none]'}</span></p>
+                    <p>Tags: <span className="font-mono">{childUploadTags || (image.tags && image.tags.length > 0 ? image.tags.join(', ') : '[none]')}</span></p>
                   </div>
                   {childUploadFiles.length > 0 && (
                     <div className="text-xs text-gray-700 space-y-1">
@@ -941,6 +1019,13 @@ const [newFolderInput, setNewFolderInput] = useState('');
                           • {file.name}
                         </p>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() => setChildUploadFiles([])}
+                        className="mt-2 px-2 py-1 text-[11px] text-red-600 border border-red-200 rounded-md hover:bg-red-50"
+                      >
+                        Clear selected files
+                      </button>
                     </div>
                   )}
                   <button
@@ -1011,37 +1096,18 @@ const [newFolderInput, setNewFolderInput] = useState('');
         </div>
       </div>
       {variantModalState && (() => {
-        const { target, mode } = variantModalState;
+        const { target } = variantModalState;
         const blurOverlayStyle: CSSProperties = {
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)'
         };
+
         const variantEntries = Object.entries(
           getMultipleImageUrls(target.id, ['thumbnail','small','medium','large','xlarge','original'])
-        );
-
-        const formatEntriesAsYaml = (entries: { url: string; altText: string }[]) => {
-          const lines = ['imagesFromGridDirectory:'];
-          entries.forEach((entry) => {
-            lines.push('  - url: ' + entry.url);
-            lines.push('    altText: ' + JSON.stringify(entry.altText ?? ''));
-          });
-          return lines.join('\n');
-        };
+        ).map(([variantName, variantUrl]) => [variantName, ensureWebpFormat(variantUrl)] as [string, string]);
 
         const handleCopyVariantList = async (variant: string, url: string) => {
-          const buildEntry = (img: CloudflareImage, entryUrl: string) => ({
-            url: entryUrl,
-            altText: img.description || ''
-          });
-
-          if (mode === 'list') {
-            const entries = [buildEntry(image, getCloudflareImageUrl(image.id, variant)), ...displayedVariations.map((child) => buildEntry(child, getCloudflareImageUrl(child.id, variant)))];
-            const payload = formatEntriesAsYaml(entries);
-            await copyToClipboard(payload, `${variant} list`);
-          } else {
-            await copyToClipboard(url, `${variant} variant`);
-          }
+          await copyToClipboard(ensureWebpFormat(url), `${variant} variant`);
           setVariantModalState(null);
         };
 
@@ -1064,22 +1130,39 @@ const [newFolderInput, setNewFolderInput] = useState('');
                   ×
                 </button>
               </div>
-              <div className="p-3 max-h-80 overflow-auto">
+              <div id="variant-size-modal" className="p-3 max-h-80 overflow-auto">
                 {variantEntries.map(([variant, url]) => (
-                  <div key={variant} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+                  <div key={variant} className="flex items-center justify-between gap-2 py-2 border-b border-gray-100 last:border-b-0">
                     <div className="flex-1 min-w-0 mr-3">
                       <div className="text-xs font-mono font-semibold text-gray-900 capitalize">{variant}</div>
                       <div className="text-xs text-gray-500 truncate">{String(url)}</div>
                     </div>
-                    <button
-                      onClick={async () => {
-                        await handleCopyVariantList(variant, String(url));
-                      }}
-                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-xs font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
-                    >
-                      Copy
-                    </button>
-                 </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={async () => {
+                          await handleCopyVariantList(variant, String(url));
+                        }}
+                        className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-xs font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const downloadName = formatDownloadFileName(target.filename || image.filename || 'image');
+                            await downloadImageToFile(String(url), downloadName);
+                            toast.push('Download started');
+                          } catch (error) {
+                            console.error('Failed to download variant', error);
+                            toast.push('Failed to download image');
+                          }
+                        }}
+                        className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs font-medium flex-shrink-0 cursor-pointer"
+                      >
+                        Download
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, forwardRef, useImperativeHandle, useMemo, CSSProperties, useRef } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, useMemo, CSSProperties, useRef, useCallback } from 'react';
 import { Trash2, Copy, ExternalLink, Sparkles, Layers } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -10,6 +10,8 @@ import { getCloudflareImageUrl, getMultipleImageUrls } from '@/utils/imageUtils'
 import { useToast } from './Toast';
 import { useImageAspectRatio } from '@/hooks/useImageAspectRatio';
 import HoverPreview from './HoverPreview';
+import { downloadImageToFile, formatDownloadFileName } from '@/utils/downloadUtils';
+import { filterImagesForGallery } from '@/utils/galleryFilter';
 
 interface CloudflareImage {
   id: string;
@@ -88,10 +90,20 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   
   // Hover preview state
   const [hoveredImage, setHoveredImage] = useState<string | null>(null);
-  const [hoverTimeout, setHoverTimeout] = useState<NodeJS.Timeout | null>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [showPreview, setShowPreview] = useState(false);
   const galleryTopRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollGalleryToTop = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const targetTop = galleryTopRef.current?.offsetTop ?? 0;
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  }, []);
 
   useEffect(() => {
     fetchImages();
@@ -103,15 +115,6 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       fetchImages(true); // Silent refresh
     }
   }, [refreshTrigger]);
-
-  // Cleanup hover timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (hoverTimeout) {
-        clearTimeout(hoverTimeout);
-      }
-    };
-  }, [hoverTimeout]);
 
   // Expose the refresh function via ref
   useImperativeHandle(ref, () => ({
@@ -266,35 +269,41 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     }
   };
 
-  // Hover preview handlers
-  const handleMouseEnter = (imageId: string, event: React.MouseEvent) => {
-    // Clear any existing timeout
-    if (hoverTimeout) {
-      clearTimeout(hoverTimeout);
+  const downloadVariantToFile = async (url: string, filenameHint?: string) => {
+    try {
+      const downloadName = formatDownloadFileName(filenameHint);
+      await downloadImageToFile(url, downloadName);
+      toast.push('Download started');
+    } catch (error) {
+      console.error('Failed to download image', error);
+      toast.push('Failed to download image');
     }
-
-    setHoveredImage(imageId);
-    setMousePosition({ x: event.clientX, y: event.clientY });
-
-    // Set timeout for 800ms before showing preview
-    const timeout = setTimeout(() => {
-      setShowPreview(true);
-    }, 800);
-
-    setHoverTimeout(timeout);
   };
 
-  const handleMouseMove = (event: React.MouseEvent) => {
+  // Hover preview handlers
+  const handleMouseEnter = (imageId: string, event: React.MouseEvent) => {
+    if (!(event.nativeEvent as MouseEvent).shiftKey) {
+      setShowPreview(false);
+      return;
+    }
+    setHoveredImage(imageId);
     setMousePosition({ x: event.clientX, y: event.clientY });
+    setShowPreview(true);
+  };
+
+  const handleMouseMove = (imageId: string, event: React.MouseEvent) => {
+    if (!(event.nativeEvent as MouseEvent).shiftKey) {
+      setShowPreview(false);
+      return;
+    }
+    if (hoveredImage !== imageId) {
+      setHoveredImage(imageId);
+    }
+    setMousePosition({ x: event.clientX, y: event.clientY });
+    setShowPreview(true);
   };
 
   const handleMouseLeave = () => {
-    // Clear timeout and hide preview
-    if (hoverTimeout) {
-      clearTimeout(hoverTimeout);
-      setHoverTimeout(null);
-    }
-    
     setHoveredImage(null);
     setShowPreview(false);
   };
@@ -435,23 +444,11 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const isSvgImage = (img: CloudflareImage) => img.filename?.toLowerCase().endsWith('.svg') ?? false;
 
   const filteredImages = useMemo(() => {
-    return images.filter(image => {
-      const matchesFolder = selectedFolder === 'all' ||
-        (selectedFolder === 'no-folder' && !image.folder) ||
-        image.folder === selectedFolder;
-
-      const matchesTag = !selectedTag || (image.tags && image.tags.includes(selectedTag));
-
-      const normalizedSearch = searchTerm.toLowerCase();
-      const matchesSearch = !searchTerm ||
-        image.filename.toLowerCase().includes(normalizedSearch) ||
-        (image.tags && image.tags.some(tag => tag.toLowerCase().includes(normalizedSearch))) ||
-        (image.folder && image.folder.toLowerCase().includes(normalizedSearch)) ||
-        (image.altTag && image.altTag.toLowerCase().includes(normalizedSearch));
-
-      const matchesVariantFilter = !onlyCanonical || !image.parentId;
-
-      return matchesFolder && matchesTag && matchesSearch && matchesVariantFilter;
+    return filterImagesForGallery(images, {
+      selectedFolder,
+      selectedTag,
+      searchTerm,
+      onlyCanonical
     });
   }, [images, selectedFolder, selectedTag, searchTerm, onlyCanonical]);
 
@@ -468,7 +465,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedFolder, selectedTag, searchTerm]);
+    scrollGalleryToTop();
+  }, [selectedFolder, selectedTag, searchTerm, scrollGalleryToTop]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -503,21 +501,30 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const prevPageRangeLabel = getPageDateRangeLabel(pageIndex - 1);
   const nextPageRangeLabel = getPageDateRangeLabel(pageIndex + 1);
 
-  const goToPreviousPage = () => setCurrentPage(prev => Math.max(1, prev - 1));
-  const goToNextPage = () => setCurrentPage(prev => Math.min(totalPages, prev + 1));
+  const goToPreviousPage = () =>
+    setCurrentPage(prev => {
+      const next = Math.max(1, prev - 1);
+      if (next !== prev) {
+        scrollGalleryToTop();
+      }
+      return next;
+    });
+  const goToNextPage = () =>
+    setCurrentPage(prev => {
+      const next = Math.min(totalPages, prev + 1);
+      if (next !== prev) {
+        scrollGalleryToTop();
+      }
+      return next;
+    });
 
   useEffect(() => {
-    if (galleryTopRef.current) {
-      galleryTopRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start'
-      });
-    }
-  }, [currentPage]);
+    scrollGalleryToTop();
+  }, [scrollGalleryToTop]);
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div id="image-gallery-loading" className="bg-white rounded-lg shadow-lg p-6">
         <div className="animate-pulse">
           <div className="h-6 bg-gray-300 rounded w-1/4 mb-4"></div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -531,9 +538,10 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
+    <div id="image-gallery-card" ref={galleryTopRef} className="overscroll-none bg-white rounded-lg shadow-lg p-6">
       <div
         ref={galleryTopRef}
+        id="gallery-filter-bar"
         className="sticky top-0 z-20 -m-6 mb-6 p-6 pb-4 bg-white/95 backdrop-blur rounded-t-lg border-b border-gray-100"
       >
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -580,7 +588,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg items-end">
+        <div id="gallery-filter-controls" className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg items-end">
           <div>
             <label htmlFor="search" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
               Search
@@ -663,7 +671,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       </div>
 
       {!hasResults ? (
-        <div className="text-center py-12">
+        <div id="gallery-empty-state" className="text-center py-12">
           <div className="text-gray-400 mb-2">
             <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 20 20" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -678,7 +686,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         </div>
       ) : (
         viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 [grid-auto-rows:1fr]">
+          <div id="gallery-results-grid" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 [grid-auto-rows:1fr]">
             {pageImages.map((image) => {
               const variationChildren = childrenMap[image.id] || [];
               const imageUrl = getImageUrl(image, selectedVariant);
@@ -687,7 +695,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               return (
                 <div
                   key={image.id}
-                  className="group bg-gray-100 rounded-lg overflow-hidden flex flex-col h-full"
+                  className="z-0 group bg-gray-100 rounded-lg overflow-hidden flex flex-col h-full"
                 >
                   <Link
                     href={`/images/${image.id}`}
@@ -700,7 +708,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                           : undefined
                     }
                     onMouseEnter={(e) => handleMouseEnter(image.id, e)}
-                    onMouseMove={handleMouseMove}
+                    onMouseMove={(e) => handleMouseMove(image.id, e)}
                     onMouseLeave={handleMouseLeave}
                     prefetch={false}
                   >
@@ -820,7 +828,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     href={`/images/${image.id}`}
                     className="w-16 h-16 relative bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer"
                     onMouseEnter={(e) => handleMouseEnter(image.id, e)}
-                    onMouseMove={handleMouseMove}
+                    onMouseMove={(e) => handleMouseMove(image.id, e)}
                     onMouseLeave={handleMouseLeave}
                     prefetch={false}
                   >
@@ -977,17 +985,29 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               </div>
               <div className="p-3 max-h-80 overflow-auto">
                 {Object.entries(getVariantUrls(modalImage)).map(([variant, url]) => (
-                  <div key={variant} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+                  <div key={variant} className="flex items-center justify-between gap-2 py-2 border-b border-gray-100 last:border-b-0">
                     <div className="flex-1 min-w-0 mr-3">
                       <div className="text-[0.7em] font-mono font-mono font-semibold text-gray-900 capitalize">{variant}</div>
                       <div className="text-[0.7em] font-mono text-gray-500 truncate">{String(url)}</div>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); copyToClipboard(String(url), variant); setOpenCopyMenu(null); }}
-                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-[0.7em] font-mono font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
-                    >
-                      Copy
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); copyToClipboard(String(url), variant); setOpenCopyMenu(null); }}
+                        className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-[0.7em] font-mono font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await downloadVariantToFile(String(url), modalImage.filename);
+                        }}
+                        className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-[0.7em] font-mono font-medium flex-shrink-0 cursor-pointer"
+                        title="Download"
+                      >
+                        Download
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1004,7 +1024,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               Edit Image Organization
             </h3>
             
-            <div className="space-y-4">
+            <div id="gallery-results-list" className="space-y-4">
               <div>
                 <label htmlFor="edit-folder" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
                   Folder
