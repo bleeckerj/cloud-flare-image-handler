@@ -161,6 +161,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [bulkApplyFolder, setBulkApplyFolder] = useState(true);
   const [bulkApplyTags, setBulkApplyTags] = useState(false);
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const utilityButtonClasses = 'text-[0.65rem] font-mono px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 transition';
 
   useEffect(() => {
@@ -609,6 +610,41 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     clearSelection
   ]);
 
+  const deleteSelectedImages = useCallback(async () => {
+    if (!selectedCount) {
+      toast.push('Select images to delete');
+      return;
+    }
+    const confirmed =
+      typeof window === 'undefined'
+        ? true
+        : window.confirm(
+            `Delete ${selectedCount} image${selectedCount === 1 ? '' : 's'}? This cannot be undone.`
+          );
+    if (!confirmed) {
+      return;
+    }
+    setBulkDeleting(true);
+    try {
+      await Promise.all(
+        Array.from(selectedImageIds).map(id =>
+          fetch(`/api/images/${id}`, {
+            method: 'DELETE'
+          })
+        )
+      );
+      setImages(prev => prev.filter(img => !selectedImageIds.has(img.id)));
+      toast.push('Images deleted');
+      clearSelection();
+      setBulkSelectionMode(false);
+    } catch (error) {
+      console.error('Bulk delete failed', error);
+      toast.push('Bulk delete failed');
+    } finally {
+      setBulkDeleting(false);
+    }
+  }, [selectedCount, selectedImageIds, toast, clearSelection]);
+
   const getImageUrl = (image: CloudflareImage, variant: string) => {
     // Use the utility function with the variant string directly
     return getCloudflareImageUrl(image.id, variant === 'public' ? 'original' : variant);
@@ -963,6 +999,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               disabled={!selectedCount}
             >
               Bulk edit
+            </button>
+            <button
+              onClick={deleteSelectedImages}
+              className="px-2 py-1 border border-red-300 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-40"
+              disabled={!selectedCount || bulkDeleting}
+            >
+              {bulkDeleting ? 'Deleting…' : 'Delete'}
             </button>
           </div>
         )}
