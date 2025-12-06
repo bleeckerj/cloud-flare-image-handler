@@ -36,11 +36,13 @@ const matchesSearchFilter = (image: GalleryImage, searchTerm: string) => {
   if (!normalizedSearch) return true;
 
   const haystacks = [
+    normalize(image.id),
     normalize(image.filename),
     normalize(image.folder),
     normalize(image.altTag),
     normalize(image.originalUrl),
-    ...(image.tags?.map(normalize) ?? [])
+    ...(image.tags?.map(normalize) ?? []),
+    ...(image.variants?.map(normalize) ?? [])
   ];
 
   return haystacks.some((candidate) => candidate.includes(normalizedSearch));

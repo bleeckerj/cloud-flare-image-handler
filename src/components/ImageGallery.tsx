@@ -747,6 +747,14 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     ],
     [uniqueFolders]
   );
+  const bulkFolderOptions = useMemo(
+    () => [
+      { value: '', label: '[none]' },
+      ...uniqueFolders.map(folder => ({ value: folder as string, label: folder as string })),
+      { value: '__create__', label: 'Create new folder...' }
+    ],
+    [uniqueFolders]
+  );
 
   const isSvgImage = (img: CloudflareImage) => img.filename?.toLowerCase().endsWith('.svg') ?? false;
 
@@ -836,6 +844,19 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 
   const goToPreviousPage = () => goToPageNumber(pageIndex - 1);
   const goToNextPage = () => goToPageNumber(pageIndex + 1);
+
+  const handleBulkFolderSelect = useCallback(
+    (value: string) => {
+      if (value === '__create__') {
+        setBulkFolderMode('new');
+        setBulkFolderInput('');
+      } else {
+        setBulkFolderMode('existing');
+        setBulkFolderInput(value);
+      }
+    },
+    [setBulkFolderInput, setBulkFolderMode]
+  );
 
   useEffect(() => {
     scrollGalleryToTop();
@@ -1565,7 +1586,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     <input
                       value={newEditFolder}
                       onChange={(e) => setNewEditFolder(e.target.value)}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-[0.7em] font-mono mt-2"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-[0.9em] font-mono mt-2"
                       placeholder="Type new folder name"
                     />
                   )}
@@ -1628,13 +1649,39 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 Update folder
               </label>
               {bulkApplyFolder && (
-                <input
-                  type="text"
-                  value={bulkFolderInput}
-                  onChange={(e) => setBulkFolderInput(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2"
-                  placeholder="Folder name (leave blank to clear)"
-                />
+                <div className="space-y-2">
+                  {bulkFolderMode === 'existing' ? (
+                    <>
+                      <MonoSelect
+                        value={bulkFolderInput}
+                        onChange={handleBulkFolderSelect}
+                        options={bulkFolderOptions}
+                        className="w-full"
+                        placeholder="[none]"
+                      />
+                      <p className="text-[0.6rem] text-gray-500">
+                        Choose an existing folder or pick “Create new folder…” to type a new name.
+                      </p>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={bulkFolderInput}
+                        onChange={(e) => setBulkFolderInput(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-3 py-2"
+                        placeholder="Type new folder name"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleBulkFolderSelect('')}
+                        className="text-[0.6rem] text-blue-600 underline"
+                      >
+                        ← Back to folder list
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             <div className="space-y-3">

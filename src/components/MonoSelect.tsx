@@ -120,7 +120,7 @@ export default function MonoSelect({
         id={id}
         name={name}
         className={cn(
-          'w-full border border-gray-300 rounded-md px-3 py-2 text-xs flex items-center justify-between gap-2 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500',
+          'w-full border border-gray-300 rounded-md px-3 py-2 text-[0.9em] flex items-center justify-between gap-2 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500',
           disabled && 'opacity-50 cursor-not-allowed'
         )}
         aria-haspopup="listbox"
@@ -160,7 +160,7 @@ export default function MonoSelect({
           className="absolute z-40 mt-1 w-full max-h-64 overflow-auto rounded-md border border-gray-200 bg-white shadow-xl"
         >
           {options.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400">No options available</div>
+            <div className="px-3 py-2 text-[0.9em] text-gray-400">No options available</div>
           ) : (
             options.map((option, index) => (
               <button
@@ -170,7 +170,7 @@ export default function MonoSelect({
                 aria-selected={option.value === value}
                 disabled={option.disabled}
                 className={cn(
-                  'w-full text-left px-3 py-2 text-[0.7em] font-mono transition',
+                  'w-full text-left px-3 py-2 text-[0.9em] font-mono transition',
                   option.disabled
                     ? 'text-gray-400 cursor-not-allowed'
                     : option.value === value
