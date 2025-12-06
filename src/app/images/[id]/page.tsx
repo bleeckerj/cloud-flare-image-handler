@@ -22,6 +22,7 @@ interface CloudflareImage {
   tags?: string[];
   description?: string;
   originalUrl?: string;
+  altTag?: string;
   parentId?: string;
   linkedAssetId?: string;
 }
@@ -96,6 +97,7 @@ export default function ImageDetailPage() {
   const [tagsInput, setTagsInput] = useState('');
   const [altTextInput, setAltTextInput] = useState('');
   const [descriptionInput, setDescriptionInput] = useState('');
+  const [descriptionGenerating, setDescriptionGenerating] = useState(false);
   const [originalUrlInput, setOriginalUrlInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [uniqueFolders, setUniqueFolders] = useState<string[]>([]);
@@ -115,6 +117,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
         setFolderSelect(found.folder || '');
         setTagsInput(Array.isArray(found.tags) ? found.tags.join(', ') : '');
         setDescriptionInput(found.description || '');
+        setAltTextInput(found.altTag || '');
         setOriginalUrlInput(found.originalUrl || '');
         setReassignParentId(found.parentId || '');
         setChildUploadFolder(found.folder || '');
@@ -123,6 +126,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
         setFolderSelect('');
         setTagsInput('');
         setDescriptionInput('');
+        setAltTextInput('');
         setOriginalUrlInput('');
         setReassignParentId('');
         setChildUploadFolder('');
@@ -533,13 +537,13 @@ const [newFolderInput, setNewFolderInput] = useState('');
       }
       setImage(prev => prev && prev.id === targetId ? { ...prev, altTag: data.altTag } : prev);
       if (targetId === id) {
-        setDescriptionInput(prev => prev ? prev + '\n\n' + data.altTag : data.altTag);
+        setAltTextInput(data.altTag);
       }
       setAllImages(prev => prev.map(img => img.id === targetId ? { ...img, altTag: data.altTag } : img));
-      toast.push('Description updated');
+      toast.push('ALT text updated');
     } catch (error) {
       console.error('Failed to generate ALT text:', error);
-      toast.push('Failed to generate description');
+      toast.push('Failed to generate ALT text');
     } finally {
       setAltLoadingMap(prev => {
         const next = { ...prev };
@@ -547,7 +551,54 @@ const [newFolderInput, setNewFolderInput] = useState('');
         return next;
       });
     }
-  }, [toast]);
+  }, [toast, id]);
+
+  const generateDescription = useCallback(async () => {
+    if (!image?.id) {
+      return;
+    }
+    setDescriptionGenerating(true);
+    try {
+      const response = await fetch(`/api/images/${image.id}/description`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          existingDescription: descriptionInput || ''
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.description) {
+        toast.push(data?.error || 'Failed to generate description');
+        return;
+      }
+      const generatedText: string = data.description;
+      const appendText = (current?: string | null) => {
+        const base = typeof current === 'string' ? current : '';
+        return base.trim() ? `${base}\n\n${generatedText}` : generatedText;
+      };
+      setDescriptionInput(prev => appendText(prev));
+      setImage(prev => {
+        if (!prev || prev.id !== image.id) {
+          return prev;
+        }
+        return {
+          ...prev,
+          description: appendText(prev.description)
+        };
+      });
+      setAllImages(prev =>
+        prev.map(img =>
+          img.id === image.id ? { ...img, description: appendText(img.description) } : img
+        )
+      );
+      toast.push('Generated description appended (Save to persist)');
+    } catch (error) {
+      console.error('Failed to generate description:', error);
+      toast.push('Failed to generate description');
+    } finally {
+      setDescriptionGenerating(false);
+    }
+  }, [image, descriptionInput, toast]);
 
   if (!id) {
     return (
@@ -601,7 +652,17 @@ const [newFolderInput, setNewFolderInput] = useState('');
 
           <div id="image-metadata-section" className="space-y-4">
             <div id="description-section">
-              <p className="text-xs font-mono font-medum text-gray-700">Description</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-mono font-medum text-gray-700">Description</p>
+                <button
+                  onClick={generateDescription}
+                  disabled={descriptionGenerating}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {descriptionGenerating ? 'Generating…' : 'Generate description'}
+                </button>
+              </div>
               <textarea
                 value={descriptionInput}
                 onChange={(e) => setDescriptionInput(e.target.value)}
