@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
+import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
 
 export async function POST(request: NextRequest) {
   try {
@@ -123,9 +124,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('Cloudflare upload result:', JSON.stringify(result, null, 2));
-
     const imageData = result.result;
+    const baseMeta = imageData.meta ?? metadataPayload;
+    const primaryCached = transformApiImageToCached({
+      id: imageData.id,
+      filename: imageData.filename,
+      uploaded: imageData.uploaded,
+      variants: imageData.variants,
+      meta: baseMeta
+    });
+    upsertCachedImage(primaryCached);
 
     let webpVariantId: string | undefined;
     if (file.type === 'image/svg+xml') {
@@ -155,7 +163,18 @@ export async function POST(request: NextRequest) {
         if (!webpResponse.ok) {
           console.error('Cloudflare WebP upload error:', webpJson);
         } else {
-          webpVariantId = webpJson.result?.id;
+          const webpResult = webpJson.result;
+          webpVariantId = webpResult?.id;
+          if (webpResult) {
+            const cachedVariant = transformApiImageToCached({
+              id: webpResult.id,
+              filename: webpResult.filename,
+              uploaded: webpResult.uploaded,
+              variants: webpResult.variants,
+              meta: webpResult.meta ?? webpMetadataPayload
+            });
+            upsertCachedImage(cachedVariant);
+          }
         }
       } catch (err) {
         console.error('Failed to convert SVG to WebP', err);
@@ -183,6 +202,15 @@ export async function POST(request: NextRequest) {
         if (!patchResp.ok) {
           const patchJson = await patchResp.json();
           console.error('Failed to patch SVG metadata', patchJson);
+        } else {
+          const updatedPrimary = transformApiImageToCached({
+            id: imageData.id,
+            filename: imageData.filename,
+            uploaded: imageData.uploaded,
+            variants: imageData.variants,
+            meta: updatedMetadata
+          });
+          upsertCachedImage(updatedPrimary);
         }
       } catch (err) {
         console.error('Failed to patch SVG metadata', err);

@@ -37,7 +37,7 @@ export interface ImageGalleryRef {
   refreshImages: () => void;
 }
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 30;
 const HIDDEN_FOLDERS_STORAGE_KEY = 'galleryHiddenFolders';
 
 const loadHiddenFoldersFromStorage = (): string[] => {
@@ -76,39 +76,76 @@ const persistHiddenFolders = (folders: string[]) => {
 const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTrigger }, ref) => {
   const getStoredPreferences = () => {
     if (typeof window === 'undefined') {
-      return { variant: 'public', onlyCanonical: false, respectAspectRatio: false, onlyWithVariants: false };
+      return {
+        variant: 'public',
+        onlyCanonical: false,
+        respectAspectRatio: false,
+        onlyWithVariants: false,
+        selectedFolder: 'all',
+        selectedTag: '',
+        searchTerm: '',
+        viewMode: 'grid' as 'grid' | 'list',
+        filtersCollapsed: false
+      };
     }
     try {
       const stored = window.localStorage.getItem('galleryPreferences');
       if (stored) {
-        const parsed = JSON.parse(stored) as { variant?: string; onlyCanonical?: boolean; respectAspectRatio?: boolean; onlyWithVariants?: boolean };
+        const parsed = JSON.parse(stored) as {
+          variant?: string;
+          onlyCanonical?: boolean;
+          respectAspectRatio?: boolean;
+          onlyWithVariants?: boolean;
+          selectedFolder?: string;
+          selectedTag?: string;
+          searchTerm?: string;
+          viewMode?: 'grid' | 'list';
+          filtersCollapsed?: boolean;
+        };
         return {
           variant: typeof parsed.variant === 'string' ? parsed.variant : 'public',
           onlyCanonical: Boolean(parsed.onlyCanonical),
           respectAspectRatio: Boolean(parsed.respectAspectRatio),
-          onlyWithVariants: Boolean(parsed.onlyWithVariants)
+          onlyWithVariants: Boolean(parsed.onlyWithVariants),
+          selectedFolder: parsed.selectedFolder ?? 'all',
+          selectedTag: parsed.selectedTag ?? '',
+          searchTerm: parsed.searchTerm ?? '',
+          viewMode: parsed.viewMode === 'list' ? 'list' : 'grid',
+          filtersCollapsed: Boolean(parsed.filtersCollapsed)
         };
       }
     } catch (error) {
       console.warn('Failed to parse gallery preferences', error);
     }
-    return { variant: 'public', onlyCanonical: false, respectAspectRatio: false, onlyWithVariants: false };
+    return {
+      variant: 'public',
+      onlyCanonical: false,
+      respectAspectRatio: false,
+      onlyWithVariants: false,
+      selectedFolder: 'all',
+      selectedTag: '',
+      searchTerm: '',
+      viewMode: 'grid',
+      filtersCollapsed: false
+    };
   };
+
+  const storedPreferencesRef = useRef(getStoredPreferences());
 
   const [images, setImages] = useState<CloudflareImage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedVariant, setSelectedVariant] = useState<string>(() => getStoredPreferences().variant);
+  const [selectedVariant, setSelectedVariant] = useState<string>(storedPreferencesRef.current.variant);
   const [openCopyMenu, setOpenCopyMenu] = useState<string | null>(null);
-  const [selectedFolder, setSelectedFolder] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [selectedTag, setSelectedTag] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedFolder, setSelectedFolder] = useState<string>(storedPreferencesRef.current.selectedFolder ?? 'all');
+  const [searchTerm, setSearchTerm] = useState<string>(storedPreferencesRef.current.searchTerm ?? '');
+  const [selectedTag, setSelectedTag] = useState<string>(storedPreferencesRef.current.selectedTag ?? '');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(storedPreferencesRef.current.viewMode ?? 'grid');
   const [currentPage, setCurrentPage] = useState(1);
-  const [onlyCanonical, setOnlyCanonical] = useState(() => getStoredPreferences().onlyCanonical);
-  const [respectAspectRatio, setRespectAspectRatio] = useState(() => getStoredPreferences().respectAspectRatio);
-  const [onlyWithVariants, setOnlyWithVariants] = useState(() => getStoredPreferences().onlyWithVariants);
+  const [onlyCanonical, setOnlyCanonical] = useState(storedPreferencesRef.current.onlyCanonical);
+  const [respectAspectRatio, setRespectAspectRatio] = useState(storedPreferencesRef.current.respectAspectRatio);
+  const [onlyWithVariants, setOnlyWithVariants] = useState(storedPreferencesRef.current.onlyWithVariants);
   const [hiddenFolders, setHiddenFolders] = useState<string[]>(() => loadHiddenFoldersFromStorage());
-  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(storedPreferencesRef.current.filtersCollapsed ?? false);
   const utilityButtonClasses = 'text-[0.65rem] font-mono px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 transition';
 
   useEffect(() => {
@@ -118,12 +155,17 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         onlyCanonical,
         respectAspectRatio,
         variant: selectedVariant,
-        onlyWithVariants
+        onlyWithVariants,
+        selectedFolder,
+        selectedTag,
+        searchTerm,
+        viewMode,
+        filtersCollapsed
       }));
     } catch (error) {
       console.warn('Failed to save gallery prefs', error);
     }
-  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants]);
+  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants, selectedFolder, selectedTag, searchTerm, viewMode, filtersCollapsed]);
   useEffect(() => {
     persistHiddenFolders(hiddenFolders);
   }, [hiddenFolders]);

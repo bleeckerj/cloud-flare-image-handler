@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanString, parseCloudflareMetadata } from '@/utils/cloudflareMetadata';
+import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
 
 export async function PATCH(
   request: NextRequest,
@@ -128,6 +129,16 @@ export async function PATCH(
     const finalTags = Array.isArray(metadata.tags) ? metadata.tags : [];
     const finalDescription = metadata.description as string | undefined;
     const finalOriginalUrl = metadata.originalUrl as string | undefined;
+
+    upsertCachedImage(
+      transformApiImageToCached({
+        id: fetchedImageResult.result.id,
+        filename: fetchedImageResult.result.filename,
+        uploaded: fetchedImageResult.result.uploaded,
+        variants: fetchedImageResult.result.variants,
+        meta: metadata
+      })
+    );
 
     return NextResponse.json({
       success: true,

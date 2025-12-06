@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
@@ -159,6 +160,16 @@ export async function POST(
         { status: updateResponse.status }
       );
     }
+
+    upsertCachedImage(
+      transformApiImageToCached({
+        id: image.id,
+        filename: image.filename,
+        uploaded: image.uploaded,
+        variants: image.variants,
+        meta: updatedMeta
+      })
+    );
 
     return NextResponse.json({ altTag: altText });
   } catch (error) {
