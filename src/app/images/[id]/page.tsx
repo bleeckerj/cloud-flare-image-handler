@@ -94,6 +94,7 @@ export default function ImageDetailPage() {
 
   const [folderSelect, setFolderSelect] = useState('');
   const [tagsInput, setTagsInput] = useState('');
+  const [altTextInput, setAltTextInput] = useState('');
   const [descriptionInput, setDescriptionInput] = useState('');
   const [originalUrlInput, setOriginalUrlInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -608,18 +609,29 @@ const [newFolderInput, setNewFolderInput] = useState('');
                 rows={3}
                 placeholder="Add a short description"
               />
-              <button
-                onClick={() => generateAltTag(image.id)}
-                disabled={Boolean(altLoadingMap[image.id])}
-                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50 mt-2"
-              >
-                <Sparkles className="h-4 w-4" />
-                {altLoadingMap[image.id]
-                  ? 'Generating description…'
-                  : image.altTag
-                    ? 'Refresh AI description'
-                    : 'Generate AI description'}
-              </button>
+            </div>
+
+            <div id="alt-text-section">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-mono font-medum text-gray-700">Alt text</p>
+                  <p className="text-[10px] text-gray-500">Used by screen readers and assistive tech.</p>
+                </div>
+                <button
+                  onClick={() => generateAltTag(image.id)}
+                  disabled={Boolean(altLoadingMap[image.id])}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {altLoadingMap[image.id] ? 'Generating…' : image.altTag ? 'Refresh ALT text' : 'Generate ALT text'}
+                </button>
+              </div>
+              <textarea
+                value={altTextInput}
+                onChange={(e) => setAltTextInput(e.target.value)}
+                placeholder="No ALT text yet"
+                className="w-full font-mono text-xs border border-gray-300 rounded-md px-3 py-2 mt-2 bg-white text-gray-800 min-h-[80px]"
+              />
             </div>
 
             <div id="folder-section">

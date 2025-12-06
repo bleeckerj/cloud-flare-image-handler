@@ -85,7 +85,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         selectedTag: '',
         searchTerm: '',
         viewMode: 'grid' as 'grid' | 'list',
-        filtersCollapsed: false
+        filtersCollapsed: false,
+        bulkFolderInput: '',
+        bulkFolderMode: 'existing' as 'existing' | 'new'
       };
     }
     try {
@@ -111,7 +113,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           selectedTag: parsed.selectedTag ?? '',
           searchTerm: parsed.searchTerm ?? '',
           viewMode: parsed.viewMode === 'list' ? 'list' : 'grid',
-          filtersCollapsed: Boolean(parsed.filtersCollapsed)
+          filtersCollapsed: Boolean(parsed.filtersCollapsed),
+          bulkFolderInput: typeof parsed.bulkFolderInput === 'string' ? parsed.bulkFolderInput : '',
+          bulkFolderMode: parsed.bulkFolderMode === 'new' ? 'new' : 'existing'
         };
       }
     } catch (error) {
@@ -126,7 +130,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       selectedTag: '',
       searchTerm: '',
       viewMode: 'grid',
-      filtersCollapsed: false
+      filtersCollapsed: false,
+      bulkFolderInput: '',
+      bulkFolderMode: 'existing'
     };
   };
 
@@ -146,6 +152,15 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [onlyWithVariants, setOnlyWithVariants] = useState(storedPreferencesRef.current.onlyWithVariants);
   const [hiddenFolders, setHiddenFolders] = useState<string[]>(() => loadHiddenFoldersFromStorage());
   const [filtersCollapsed, setFiltersCollapsed] = useState(storedPreferencesRef.current.filtersCollapsed ?? false);
+  const [bulkSelectionMode, setBulkSelectionMode] = useState(false);
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set());
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkFolderInput, setBulkFolderInput] = useState<string>(storedPreferencesRef.current.bulkFolderInput ?? '');
+  const [bulkFolderMode, setBulkFolderMode] = useState<'existing' | 'new'>(storedPreferencesRef.current.bulkFolderMode ?? 'existing');
+  const [bulkTagsInput, setBulkTagsInput] = useState('');
+  const [bulkApplyFolder, setBulkApplyFolder] = useState(true);
+  const [bulkApplyTags, setBulkApplyTags] = useState(false);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const utilityButtonClasses = 'text-[0.65rem] font-mono px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 transition';
 
   useEffect(() => {
@@ -160,15 +175,30 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         selectedTag,
         searchTerm,
         viewMode,
-        filtersCollapsed
+        filtersCollapsed,
+        bulkFolderInput,
+        bulkFolderMode
       }));
     } catch (error) {
       console.warn('Failed to save gallery prefs', error);
     }
-  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants, selectedFolder, selectedTag, searchTerm, viewMode, filtersCollapsed]);
+  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants, selectedFolder, selectedTag, searchTerm, viewMode, filtersCollapsed, bulkFolderInput, bulkFolderMode]);
   useEffect(() => {
     persistHiddenFolders(hiddenFolders);
   }, [hiddenFolders]);
+  useEffect(() => {
+    setSelectedImageIds(prev => {
+      if (!prev.size) return prev;
+      const validIds = new Set(images.map(img => img.id));
+      const next = new Set<string>();
+      prev.forEach(id => {
+        if (validIds.has(id)) {
+          next.add(id);
+        }
+      });
+      return next;
+    });
+  }, [images]);
   useEffect(() => {
     if (
       selectedFolder !== 'all' &&
@@ -455,6 +485,129 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     setHiddenFolders([]);
     return true;
   }, [hiddenFolders]);
+
+  const selectedCount = selectedImageIds.size;
+
+  const toggleSelection = useCallback((imageId: string) => {
+    setSelectedImageIds(prev => {
+      const next = new Set(prev);
+      if (next.has(imageId)) {
+        next.delete(imageId);
+      } else {
+        next.add(imageId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedImageIds(new Set());
+  }, []);
+
+  const selectAllOnPage = useCallback((pageItems: CloudflareImage[]) => {
+    setSelectedImageIds(prev => {
+      const next = new Set(prev);
+      pageItems.forEach(item => next.add(item.id));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!bulkSelectionMode && selectedImageIds.size) {
+      clearSelection();
+    }
+  }, [bulkSelectionMode, selectedImageIds.size, clearSelection]);
+
+  const openBulkEditModal = useCallback(() => {
+    if (!selectedCount) {
+      toast.push('Select at least one image');
+      return;
+    }
+    setBulkFolderInput('');
+    setBulkTagsInput('');
+    setBulkApplyFolder(true);
+    setBulkApplyTags(false);
+    setBulkEditOpen(true);
+  }, [selectedCount, toast]);
+
+  const closeBulkEditModal = useCallback(() => {
+    setBulkEditOpen(false);
+  }, []);
+
+  const applyBulkUpdates = useCallback(async () => {
+    if (!selectedCount) {
+      toast.push('No images selected');
+      return;
+    }
+    const payload: Record<string, unknown> = {};
+    if (bulkApplyFolder) {
+      if (bulkFolderMode === 'existing') {
+        payload.folder = bulkFolderInput || undefined;
+      } else if (bulkFolderMode === 'new') {
+        payload.folder = bulkFolderInput.trim() || undefined;
+      }
+    }
+    if (bulkApplyTags) {
+      payload.tags = bulkTagsInput;
+    }
+    if (Object.keys(payload).length === 0) {
+      toast.push('Choose at least one field to update');
+      return;
+    }
+    setBulkUpdating(true);
+    try {
+      await Promise.all(
+        Array.from(selectedImageIds).map(id =>
+          fetch(`/api/images/${id}/update`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          })
+        )
+      );
+      setImages(prev =>
+        prev.map(img => {
+          if (!selectedImageIds.has(img.id)) {
+            return img;
+          }
+          const updatedFolder =
+            bulkApplyFolder &&
+            (bulkFolderMode === 'existing'
+              ? bulkFolderInput || undefined
+              : bulkFolderInput.trim() || undefined);
+          const updatedTags = bulkApplyTags
+            ? bulkTagsInput.trim()
+              ? bulkTagsInput.split(',').map(tag => tag.trim()).filter(Boolean)
+              : []
+            : img.tags;
+
+          return {
+            ...img,
+            folder: bulkApplyFolder ? updatedFolder : img.folder,
+            tags: updatedTags
+          };
+        })
+      );
+      toast.push('Images updated');
+      clearSelection();
+      setBulkSelectionMode(false);
+      setBulkEditOpen(false);
+    } catch (error) {
+      console.error('Bulk update failed', error);
+      toast.push('Bulk update failed');
+    } finally {
+      setBulkUpdating(false);
+    }
+  }, [
+    bulkApplyFolder,
+    bulkApplyTags,
+    bulkFolderInput,
+    bulkTagsInput,
+    selectedCount,
+    selectedImageIds,
+    toast,
+    clearSelection
+  ]);
 
   const getImageUrl = (image: CloudflareImage, variant: string) => {
     // Use the utility function with the variant string directly
@@ -746,6 +899,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               </div>
             )}
             <button
+              onClick={() => setBulkSelectionMode(prev => !prev)}
+              className="px-3 py-1 text-[0.7em] font-mono border border-gray-200 rounded-md hover:bg-gray-100 transition"
+              aria-pressed={bulkSelectionMode}
+            >
+              {bulkSelectionMode ? 'Done selecting' : 'Select images'}
+            </button>
+            <button
               onClick={() => setFiltersCollapsed(prev => !prev)}
               className="px-3 py-1 text-[0.7em] font-mono border border-gray-200 rounded-md hover:bg-gray-100 transition"
               aria-pressed={!filtersCollapsed}
@@ -760,6 +920,31 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             </button>
           </div>
         </div>
+
+        {(bulkSelectionMode || selectedCount > 0) && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 text-[0.7em] font-mono text-gray-700">
+            <span>{selectedCount} selected</span>
+            <button
+              onClick={() => selectAllOnPage(pageImages)}
+              className="px-2 py-1 border rounded-md hover:bg-gray-100"
+            >
+              Select page
+            </button>
+            <button
+              onClick={clearSelection}
+              className="px-2 py-1 border rounded-md hover:bg-gray-100"
+            >
+              Clear
+            </button>
+            <button
+              onClick={openBulkEditModal}
+              className="px-2 py-1 bg-gray-900 text-white rounded-md hover:bg-black disabled:opacity-40"
+              disabled={!selectedCount}
+            >
+              Bulk edit
+            </button>
+          </div>
+        )}
 
         <div
           className={`overflow-hidden transition-[max-height] duration-300 ease-in-out ${filtersCollapsed ? 'max-h-0' : 'max-h-[1200px]'}`}
@@ -907,6 +1092,29 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           >
             {filtersCollapsed ? 'Show filters' : 'Hide filters'}
           </button>
+          {selectedCount > 0 && (
+            <div className="flex items-center gap-2 text-[0.6rem] text-white">
+              <span>{selectedCount} selected</span>
+              <button
+                onClick={() => selectAllOnPage(pageImages)}
+                className={`${utilityButtonClasses} border border-white/20`}
+              >
+                Select page
+              </button>
+              <button
+                onClick={openBulkEditModal}
+                className={`${utilityButtonClasses} bg-blue-600 hover:bg-blue-500`}
+              >
+                Bulk edit
+              </button>
+              <button
+                onClick={clearSelection}
+                className={`${utilityButtonClasses} border border-white/20`}
+              >
+                Clear
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-1 text-[0.6rem] text-gray-200">
             <button
               onClick={goToPreviousPage}
@@ -963,14 +1171,17 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               const imageUrl = getImageUrl(image, selectedVariant);
               const svgImage = isSvgImage(image);
               const displayUrl = svgImage ? getCloudflareImageUrl(image.id, 'original') : imageUrl;
+              const isSelected = selectedImageIds.has(image.id);
               return (
                 <div
                   key={image.id}
-                  className="z-0 group bg-gray-100 rounded-lg overflow-hidden flex flex-col h-full"
+                  className={`z-0 group bg-gray-100 rounded-lg overflow-hidden flex flex-col h-full border ${
+                    isSelected ? 'border-blue-500 ring-2 ring-blue-400' : 'border-transparent'
+                  } ${bulkSelectionMode ? 'cursor-pointer' : ''}`}
                 >
                   <Link
                     href={`/images/${image.id}`}
-                    className={`relative block w-full cursor-pointer ${respectAspectRatio ? '' : 'aspect-square'}`}
+                    className={`relative block w-full ${respectAspectRatio ? '' : 'aspect-square'}`}
                     style={
                       respectAspectRatio && image.dimensions
                         ? { paddingBottom: `${(image.dimensions.height / image.dimensions.width) * 100}%` }
@@ -978,6 +1189,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                           ? { paddingBottom: '75%' }
                           : undefined
                     }
+                    onClick={(e) => {
+                      if (bulkSelectionMode) {
+                        e.preventDefault();
+                        toggleSelection(image.id);
+                      }
+                    }}
                     onMouseEnter={(e) => handleMouseEnter(image.id, e)}
                     onMouseMove={(e) => handleMouseMove(image.id, e)}
                     onMouseLeave={handleMouseLeave}
@@ -997,6 +1214,21 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                         className={respectAspectRatio ? 'object-contain bg-gray-50' : 'object-cover'}
                         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                       />
+                    )}
+                    {bulkSelectionMode && (
+                      <label className="absolute top-2 left-2 flex items-center gap-1 text-[0.65rem] font-mono bg-white/90 px-2 py-1 rounded-md shadow cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleSelection(image.id);
+                          }}
+                          className="h-3 w-3"
+                        />
+                        Select
+                      </label>
                     )}
                   </Link>
                   
@@ -1090,10 +1322,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               const imageUrl = getImageUrl(image, selectedVariant);
               const svgImage = isSvgImage(image);
               const displayUrl = svgImage ? getCloudflareImageUrl(image.id, 'original') : imageUrl;
+              const isSelected = selectedImageIds.has(image.id);
               return (
                 <div
                   key={image.id}
-                  className="flex items-center space-x-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
+                  className={`flex items-center space-x-4 p-4 border rounded-lg hover:bg-gray-50 ${
+                    isSelected ? 'border-blue-500 ring-2 ring-blue-400' : 'border-gray-200'
+                  }`}
                 >
                   <Link
                     href={`/images/${image.id}`}
@@ -1101,6 +1336,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     onMouseEnter={(e) => handleMouseEnter(image.id, e)}
                     onMouseMove={(e) => handleMouseMove(image.id, e)}
                     onMouseLeave={handleMouseLeave}
+                    onClick={(e) => {
+                      if (bulkSelectionMode) {
+                        e.preventDefault();
+                        toggleSelection(image.id);
+                      }
+                    }}
                     prefetch={false}
                   >
                     {svgImage ? (
@@ -1119,6 +1360,18 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                       />
                     )}
                   </Link>
+                  {bulkSelectionMode && (
+                    <label className="flex items-center gap-2 text-[0.7em] font-mono">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelection(image.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-3 w-3"
+                      />
+                      Select
+                    </label>
+                  )}
                   
                   <div className="flex-1 min-w-0">
                     <p className="text-[0.7em] font-mono font-mono font-medum text-gray-900 truncate">
@@ -1348,6 +1601,76 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 className="px-4 py-2 text-[0.7em] font-mono bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
                 Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Edit Modal */}
+      {bulkEditOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] px-4">
+          <div className="bg-white rounded-lg w-full max-w-lg p-6 space-y-4 text-[0.7em] font-mono">
+            <div className="flex items-center justify-between">
+              <p className="text-gray-900 font-semibold">Bulk edit ({selectedCount} images)</p>
+              <button onClick={closeBulkEditModal} className="text-gray-500 hover:text-gray-700">
+                ×
+              </button>
+            </div>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={bulkApplyFolder}
+                  onChange={(e) => setBulkApplyFolder(e.target.checked)}
+                  className="h-3 w-3"
+                />
+                Update folder
+              </label>
+              {bulkApplyFolder && (
+                <input
+                  type="text"
+                  value={bulkFolderInput}
+                  onChange={(e) => setBulkFolderInput(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2"
+                  placeholder="Folder name (leave blank to clear)"
+                />
+              )}
+            </div>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={bulkApplyTags}
+                  onChange={(e) => setBulkApplyTags(e.target.checked)}
+                  className="h-3 w-3"
+                />
+                Update tags
+              </label>
+              {bulkApplyTags && (
+                <textarea
+                  value={bulkTagsInput}
+                  onChange={(e) => setBulkTagsInput(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2"
+                  placeholder="Comma-separated tags"
+                  rows={3}
+                />
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={closeBulkEditModal}
+                className="px-4 py-2 border border-gray-300 rounded-md"
+                disabled={bulkUpdating}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyBulkUpdates}
+                disabled={bulkUpdating}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:opacity-50"
+              >
+                {bulkUpdating ? 'Updating…' : 'Apply changes'}
               </button>
             </div>
           </div>
