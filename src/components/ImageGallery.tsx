@@ -668,22 +668,21 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const prevPageRangeLabel = getPageDateRangeLabel(pageIndex - 1);
   const nextPageRangeLabel = getPageDateRangeLabel(pageIndex + 1);
 
-  const goToPreviousPage = () =>
-    setCurrentPage(prev => {
-      const next = Math.max(1, prev - 1);
-      if (next !== prev) {
-        scrollGalleryToTop();
-      }
-      return next;
-    });
-  const goToNextPage = () =>
-    setCurrentPage(prev => {
-      const next = Math.min(totalPages, prev + 1);
-      if (next !== prev) {
-        scrollGalleryToTop();
-      }
-      return next;
-    });
+  const goToPageNumber = useCallback(
+    (target: number) => {
+      setCurrentPage(prev => {
+        const next = Math.min(Math.max(1, target), totalPages);
+        if (next !== prev) {
+          scrollGalleryToTop();
+        }
+        return next;
+      });
+    },
+    [scrollGalleryToTop, totalPages]
+  );
+
+  const goToPreviousPage = () => goToPageNumber(pageIndex - 1);
+  const goToNextPage = () => goToPageNumber(pageIndex + 1);
 
   useEffect(() => {
     scrollGalleryToTop();
@@ -867,6 +866,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               onClearHidden={clearHiddenFolders}
               showParentsOnly={onlyWithVariants}
               onSetParentsOnly={setOnlyWithVariants}
+              currentPage={pageIndex}
+              totalPages={totalPages}
+              onGoToPage={goToPageNumber}
             />
           </div>
             {hiddenFolders.length > 0 && (
@@ -905,6 +907,25 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           >
             {filtersCollapsed ? 'Show filters' : 'Hide filters'}
           </button>
+          <div className="flex items-center gap-1 text-[0.6rem] text-gray-200">
+            <button
+              onClick={goToPreviousPage}
+              disabled={pageIndex === 1}
+              className={`${utilityButtonClasses} disabled:opacity-40`}
+            >
+              Prev
+            </button>
+            <span className="text-[0.6rem]">
+              {pageIndex}/{totalPages}
+            </span>
+            <button
+              onClick={goToNextPage}
+              disabled={pageIndex === totalPages}
+              className={`${utilityButtonClasses} disabled:opacity-40`}
+            >
+              Next
+            </button>
+          </div>
           <button
             onClick={scrollGalleryToTop}
             className={utilityButtonClasses}

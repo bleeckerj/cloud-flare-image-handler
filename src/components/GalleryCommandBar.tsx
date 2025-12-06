@@ -11,6 +11,9 @@ interface GalleryCommandBarProps {
   onClearHidden: () => boolean;
   showParentsOnly: boolean;
   onSetParentsOnly: (value: boolean) => void;
+  currentPage: number;
+  totalPages: number;
+  onGoToPage: (page: number) => void;
 }
 
 const baseHelp = [
@@ -22,6 +25,7 @@ const baseHelp = [
   '- list folders: List all known folders',
   '- parents only: Only show images that have variants',
   '- show all: Show every image, including solos',
+  '- page next/prev or page <n>: Navigate gallery pages',
   '- help: Show this command list'
 ].join(' ');
 
@@ -32,7 +36,10 @@ export default function GalleryCommandBar({
   onUnhideFolder,
   onClearHidden,
   showParentsOnly,
-  onSetParentsOnly
+  onSetParentsOnly,
+  currentPage,
+  totalPages,
+  onGoToPage
 }: GalleryCommandBarProps) {
   const [inputValue, setInputValue] = useState('');
   const [statusLine, setStatusLine] = useState(baseHelp);
@@ -87,6 +94,38 @@ export default function GalleryCommandBar({
       return;
     }
 
+    if (/^(page\s+next|next\s+page)$/i.test(trimmed)) {
+      if (currentPage >= totalPages) {
+        setStatusLine('Already on last page.');
+      } else {
+        onGoToPage(currentPage + 1);
+        setStatusLine(`Moved to page ${currentPage + 1}.`);
+      }
+      return;
+    }
+
+    if (/^(page\s+prev|prev\s+page)$/i.test(trimmed)) {
+      if (currentPage <= 1) {
+        setStatusLine('Already on first page.');
+      } else {
+        onGoToPage(currentPage - 1);
+        setStatusLine(`Moved to page ${currentPage - 1}.`);
+      }
+      return;
+    }
+
+    const jumpMatch = /^page\s+(\d+)$/i.exec(trimmed);
+    if (jumpMatch) {
+      const target = Number(jumpMatch[1]);
+      if (Number.isNaN(target) || target < 1 || target > totalPages) {
+        setStatusLine(`Page must be between 1 and ${totalPages}.`);
+      } else {
+        onGoToPage(target);
+        setStatusLine(`Jumped to page ${target}.`);
+      }
+      return;
+    }
+
     const hideMatch = /^(hide)\s+(?:folder\s+)?(.+)$/i.exec(trimmed);
     if (hideMatch) {
       const folderName = hideMatch[2].trim();
@@ -130,7 +169,9 @@ export default function GalleryCommandBar({
     <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-3 py-3">
       <div className="flex items-center gap-2 text-[0.6rem] uppercase tracking-wide text-slate-400">
         <span className="text-green-300">Gallery CLI</span>
-        <span className="text-slate-500 lowercase">hide folder maintenance</span>
+        <span className="text-slate-500 lowercase">
+          hide folder maintenance | page {currentPage}/{totalPages}
+        </span>
       </div>
       <form onSubmit={handleSubmit} className="flex items-center gap-2 mt-2">
         <span className="text-green-300 text-sm">$</span>
