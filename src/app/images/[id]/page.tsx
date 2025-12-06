@@ -532,7 +532,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
       }
       setImage(prev => prev && prev.id === targetId ? { ...prev, altTag: data.altTag } : prev);
       if (targetId === id) {
-        setDescriptionInput(data.altTag);
+        setDescriptionInput(prev => prev ? prev + '\n\n' + data.altTag : data.altTag);
       }
       setAllImages(prev => prev.map(img => img.id === targetId ? { ...img, altTag: data.altTag } : img));
       toast.push('Description updated');

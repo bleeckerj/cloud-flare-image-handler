@@ -5,6 +5,7 @@ import { Trash2, Copy, ExternalLink, Sparkles, Layers } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import MonoSelect from './MonoSelect';
+import GalleryCommandBar from './GalleryCommandBar';
 import FolderManagerButton from './FolderManagerButton';
 import { getCloudflareImageUrl, getMultipleImageUrls } from '@/utils/imageUtils';
 import { useToast } from './Toast';
@@ -25,6 +26,7 @@ interface CloudflareImage {
   altTag?: string;
   parentId?: string;
   linkedAssetId?: string;
+  originalUrl?: string;
 }
 
 interface ImageGalleryProps {
@@ -36,26 +38,61 @@ export interface ImageGalleryRef {
 }
 
 const PAGE_SIZE = 15;
+const HIDDEN_FOLDERS_STORAGE_KEY = 'galleryHiddenFolders';
+
+const loadHiddenFoldersFromStorage = (): string[] => {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+  try {
+    const storedValue = window.localStorage.getItem(HIDDEN_FOLDERS_STORAGE_KEY);
+    if (!storedValue) {
+      return [];
+    }
+    const parsed = JSON.parse(storedValue);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((item): item is string => typeof item === 'string')
+        .map(item => item.trim())
+        .filter(Boolean);
+    }
+  } catch (error) {
+    console.warn('Failed to parse hidden folders', error);
+  }
+  return [];
+};
+
+const persistHiddenFolders = (folders: string[]) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(HIDDEN_FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+  } catch (error) {
+    console.warn('Failed to save hidden folders', error);
+  }
+};
 
 const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTrigger }, ref) => {
   const getStoredPreferences = () => {
     if (typeof window === 'undefined') {
-      return { variant: 'public', onlyCanonical: false, respectAspectRatio: false };
+      return { variant: 'public', onlyCanonical: false, respectAspectRatio: false, onlyWithVariants: false };
     }
     try {
       const stored = window.localStorage.getItem('galleryPreferences');
       if (stored) {
-        const parsed = JSON.parse(stored) as { variant?: string; onlyCanonical?: boolean; respectAspectRatio?: boolean };
+        const parsed = JSON.parse(stored) as { variant?: string; onlyCanonical?: boolean; respectAspectRatio?: boolean; onlyWithVariants?: boolean };
         return {
           variant: typeof parsed.variant === 'string' ? parsed.variant : 'public',
           onlyCanonical: Boolean(parsed.onlyCanonical),
-          respectAspectRatio: Boolean(parsed.respectAspectRatio)
+          respectAspectRatio: Boolean(parsed.respectAspectRatio),
+          onlyWithVariants: Boolean(parsed.onlyWithVariants)
         };
       }
     } catch (error) {
       console.warn('Failed to parse gallery preferences', error);
     }
-    return { variant: 'public', onlyCanonical: false, respectAspectRatio: false };
+    return { variant: 'public', onlyCanonical: false, respectAspectRatio: false, onlyWithVariants: false };
   };
 
   const [images, setImages] = useState<CloudflareImage[]>([]);
@@ -69,6 +106,10 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [currentPage, setCurrentPage] = useState(1);
   const [onlyCanonical, setOnlyCanonical] = useState(() => getStoredPreferences().onlyCanonical);
   const [respectAspectRatio, setRespectAspectRatio] = useState(() => getStoredPreferences().respectAspectRatio);
+  const [onlyWithVariants, setOnlyWithVariants] = useState(() => getStoredPreferences().onlyWithVariants);
+  const [hiddenFolders, setHiddenFolders] = useState<string[]>(() => loadHiddenFoldersFromStorage());
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const utilityButtonClasses = 'text-[0.65rem] font-mono px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 transition';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -76,12 +117,25 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       window.localStorage.setItem('galleryPreferences', JSON.stringify({
         onlyCanonical,
         respectAspectRatio,
-        variant: selectedVariant
+        variant: selectedVariant,
+        onlyWithVariants
       }));
     } catch (error) {
       console.warn('Failed to save gallery prefs', error);
     }
-  }, [onlyCanonical, respectAspectRatio, selectedVariant]);
+  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants]);
+  useEffect(() => {
+    persistHiddenFolders(hiddenFolders);
+  }, [hiddenFolders]);
+  useEffect(() => {
+    if (
+      selectedFolder !== 'all' &&
+      selectedFolder !== 'no-folder' &&
+      hiddenFolders.includes(selectedFolder)
+    ) {
+      setSelectedFolder('all');
+    }
+  }, [hiddenFolders, selectedFolder]);
   const [editingImage, setEditingImage] = useState<string | null>(null);
   const [editTags, setEditTags] = useState<string>('');
   const [editFolderSelect, setEditFolderSelect] = useState<string>('');
@@ -103,6 +157,15 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       top: 0,
       behavior: 'smooth'
     });
+  }, []);
+  const scrollToUploader = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const uploaderSection = document.getElementById('uploader-section');
+    if (uploaderSection) {
+      uploaderSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }, []);
 
   useEffect(() => {
@@ -136,6 +199,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     } finally {
       setLoading(false);
     }
+  };
+  const handleFoldersChanged = async () => {
+    await fetchImages(true);
   };
 
   const deleteImage = async (imageId: string) => {
@@ -308,6 +374,46 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     setShowPreview(false);
   };
 
+  const hideFolderByName = useCallback((folderName: string) => {
+    const sanitized = folderName.trim();
+    if (!sanitized) {
+      return false;
+    }
+    let added = false;
+    setHiddenFolders(prev => {
+      if (prev.includes(sanitized)) {
+        return prev;
+      }
+      added = true;
+      return [...prev, sanitized];
+    });
+    return added;
+  }, []);
+
+  const unhideFolderByName = useCallback((folderName: string) => {
+    const sanitized = folderName.trim();
+    if (!sanitized) {
+      return false;
+    }
+    let removed = false;
+    setHiddenFolders(prev => {
+      if (!prev.includes(sanitized)) {
+        return prev;
+      }
+      removed = true;
+      return prev.filter(folder => folder !== sanitized);
+    });
+    return removed;
+  }, []);
+
+  const clearHiddenFolders = useCallback(() => {
+    if (hiddenFolders.length === 0) {
+      return false;
+    }
+    setHiddenFolders([]);
+    return true;
+  }, [hiddenFolders]);
+
   const getImageUrl = (image: CloudflareImage, variant: string) => {
     // Use the utility function with the variant string directly
     return getCloudflareImageUrl(image.id, variant === 'public' ? 'original' : variant);
@@ -383,9 +489,15 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     return getMultipleImageUrls(image.id, VARIANT_PRESETS);
   };
 
-  const uniqueFolders = useMemo(
-    () => Array.from(new Set(images.filter(img => img.folder && img.folder.trim()).map(img => img.folder))),
-    [images]
+  const uniqueFolders = useMemo(() => {
+    const folderNames = images
+      .map(img => img.folder?.trim())
+      .filter((folder): folder is string => Boolean(folder));
+    return Array.from(new Set(folderNames));
+  }, [images]);
+  const visibleFolders = useMemo(
+    () => uniqueFolders.filter(folder => !hiddenFolders.includes(folder)),
+    [uniqueFolders, hiddenFolders]
   );
 
   const childrenMap = useMemo(() => {
@@ -407,9 +519,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     () => [
       { value: 'all', label: 'All folders' },
       { value: 'no-folder', label: 'No folder' },
-      ...uniqueFolders.map(folder => ({ value: folder, label: folder as string }))
+      ...visibleFolders.map(folder => ({ value: folder, label: folder as string }))
     ],
-    [uniqueFolders]
+    [visibleFolders]
   );
 
   const tagFilterOptions = useMemo(
@@ -448,13 +560,26 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       selectedFolder,
       selectedTag,
       searchTerm,
-      onlyCanonical
+      onlyCanonical,
+      hiddenFolders
     });
-  }, [images, selectedFolder, selectedTag, searchTerm, onlyCanonical]);
+  }, [images, selectedFolder, selectedTag, searchTerm, onlyCanonical, hiddenFolders]);
+
+  const filteredWithVariants = useMemo(() => {
+    if (!onlyWithVariants) {
+      return filteredImages;
+    }
+    const parentIdsWithChildren = new Set(
+      Object.entries(childrenMap)
+        .filter(([, value]) => (value?.length ?? 0) > 0)
+        .map(([key]) => key)
+    );
+    return filteredImages.filter(image => parentIdsWithChildren.has(image.id));
+  }, [filteredImages, onlyWithVariants, childrenMap]);
 
   const sortedImages = useMemo(() => {
-    return [...filteredImages].sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
-  }, [filteredImages]);
+    return [...filteredWithVariants].sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
+  }, [filteredWithVariants]);
 
   const totalPages = Math.max(1, Math.ceil(sortedImages.length / PAGE_SIZE));
   const pageIndex = Math.min(currentPage, totalPages);
@@ -466,7 +591,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   useEffect(() => {
     setCurrentPage(1);
     scrollGalleryToTop();
-  }, [selectedFolder, selectedTag, searchTerm, scrollGalleryToTop]);
+  }, [selectedFolder, selectedTag, searchTerm, onlyWithVariants, scrollGalleryToTop]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -547,7 +672,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
             <p className="text-[0.7em] font-mono font-mono text-gray-900">
-              Image Gallery ({filteredImages.length}/{images.length})
+              Image Gallery ({filteredWithVariants.length}/{images.length})
             </p>
             {showPagination && currentPageRangeLabel && (
               <p className="font-mono text-[0.7em] font-mono text-gray-500">
@@ -580,6 +705,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               </div>
             )}
             <button
+              onClick={() => setFiltersCollapsed(prev => !prev)}
+              className="px-3 py-1 text-[0.7em] font-mono border border-gray-200 rounded-md hover:bg-gray-100 transition"
+              aria-pressed={!filtersCollapsed}
+            >
+              {filtersCollapsed ? 'Show filters' : 'Hide filters'}
+            </button>
+            <button
               onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
               className="px-3 py-1 text-[0.7em] font-mono bg-gray-100 hover:bg-gray-200 rounded-md"
             >
@@ -588,8 +720,15 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           </div>
         </div>
 
-        <div id="gallery-filter-controls" className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg items-end">
-          <div>
+        <div
+          className={`overflow-hidden transition-[max-height] duration-300 ease-in-out ${filtersCollapsed ? 'max-h-0' : 'max-h-[1200px]'}`}
+          aria-hidden={filtersCollapsed}
+        >
+          <div
+            id="gallery-filter-controls"
+            className={`grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg items-end transition-opacity duration-300 ${filtersCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+          >
+            <div>
             <label htmlFor="search" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
               Search
             </label>
@@ -666,7 +805,76 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               />
               aspect
             </label>
+            <label htmlFor="variants-filter" className="flex items-center gap-1 font-mono">
+              <input
+                id="variants-filter"
+                type="checkbox"
+                checked={onlyWithVariants}
+                onChange={(e) => setOnlyWithVariants(e.target.checked)}
+                className="h-3 w-3 font-mono text-[0.7em] font-mono text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              parents
+            </label>
           </div>
+          <div className="md:col-span-5">
+            <GalleryCommandBar
+              hiddenFolders={hiddenFolders}
+              knownFolders={uniqueFolders}
+              onHideFolder={hideFolderByName}
+              onUnhideFolder={unhideFolderByName}
+              onClearHidden={clearHiddenFolders}
+              showParentsOnly={onlyWithVariants}
+              onSetParentsOnly={setOnlyWithVariants}
+            />
+          </div>
+            {hiddenFolders.length > 0 && (
+              <div className="md:col-span-5 flex flex-wrap items-center gap-2 p-3 bg-white border border-gray-200 rounded-lg text-[0.65rem] font-mono text-gray-700">
+                <span className="uppercase tracking-wide text-gray-500 text-[0.6rem]">Hidden folders</span>
+                {hiddenFolders.map(folder => (
+                  <button
+                    key={folder}
+                    onClick={() => unhideFolderByName(folder)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-900 text-white hover:bg-black transition"
+                    title="Unhide folder"
+                  >
+                    {folder}
+                    <span aria-hidden="true">×</span>
+                  </button>
+                ))}
+                <button
+                  onClick={clearHiddenFolders}
+                  className="ml-auto text-[0.6rem] uppercase tracking-wide text-blue-600 hover:text-blue-700"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="hidden sm:block fixed bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+        <div className="pointer-events-auto flex items-center gap-3 bg-gray-900 text-white border border-gray-700 rounded-full shadow-lg px-4 py-2">
+          <span className="uppercase tracking-wide text-[0.55rem] text-gray-400">Utility</span>
+          <button
+            onClick={() => setFiltersCollapsed(prev => !prev)}
+            className={utilityButtonClasses}
+            aria-pressed={!filtersCollapsed}
+          >
+            {filtersCollapsed ? 'Show filters' : 'Hide filters'}
+          </button>
+          <button
+            onClick={scrollGalleryToTop}
+            className={utilityButtonClasses}
+          >
+            Scroll top
+          </button>
+          <button
+            onClick={scrollToUploader}
+            className={utilityButtonClasses}
+          >
+            Go to uploader
+          </button>
         </div>
       </div>
 
@@ -1101,6 +1309,3 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 ImageGallery.displayName = 'ImageGallery';
 
 export default ImageGallery;
-  const handleFoldersChanged = async () => {
-    await fetchImages(true);
-  };

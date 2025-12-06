@@ -10,7 +10,8 @@ const makeImage = (overrides: Partial<GalleryImage> = {}): GalleryImage => ({
   folder: overrides.folder,
   tags: overrides.tags,
   altTag: overrides.altTag,
-  parentId: overrides.parentId
+  parentId: overrides.parentId,
+  originalUrl: overrides.originalUrl
 });
 
 describe('filterImagesForGallery', () => {
@@ -60,5 +61,26 @@ describe('filterImagesForGallery', () => {
 
     const ids = result.map((img) => img.id);
     expect(ids).not.toContain('3');
+  });
+
+  it('matches search when original URL contains the text', () => {
+    const extendedImages = [
+      ...images,
+      makeImage({
+        id: '4',
+        filename: 'dribbble-shot.png',
+        originalUrl: 'https://dribbble.com/shots/cool-shot',
+        folder: 'internal'
+      })
+    ];
+
+    const result = filterImagesForGallery(extendedImages, {
+      selectedFolder: 'all',
+      selectedTag: '',
+      searchTerm: 'dribbble',
+      onlyCanonical: false
+    });
+
+    expect(result.map(img => img.id)).toContain('4');
   });
 });

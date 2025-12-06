@@ -7,6 +7,7 @@ export interface GalleryImage {
   tags?: string[];
   altTag?: string;
   parentId?: string;
+  originalUrl?: string;
 }
 
 export interface GalleryFilterOptions {
@@ -14,6 +15,7 @@ export interface GalleryFilterOptions {
   selectedTag: string;
   searchTerm: string;
   onlyCanonical: boolean;
+  hiddenFolders?: string[];
 }
 
 const normalize = (value?: string) => value?.toLowerCase() ?? '';
@@ -37,22 +39,30 @@ const matchesSearchFilter = (image: GalleryImage, searchTerm: string) => {
     normalize(image.filename),
     normalize(image.folder),
     normalize(image.altTag),
+    normalize(image.originalUrl),
     ...(image.tags?.map(normalize) ?? [])
   ];
 
   return haystacks.some((candidate) => candidate.includes(normalizedSearch));
 };
 
+const matchesHiddenFolderFilter = (image: GalleryImage, hiddenFolders?: string[]) => {
+  if (!hiddenFolders || hiddenFolders.length === 0) return true;
+  if (!image.folder) return true;
+  return !hiddenFolders.includes(image.folder);
+};
+
 export const filterImagesForGallery = (
   images: GalleryImage[],
   options: GalleryFilterOptions
 ): GalleryImage[] => {
-  const { selectedFolder, selectedTag, searchTerm, onlyCanonical } = options;
+  const { selectedFolder, selectedTag, searchTerm, onlyCanonical, hiddenFolders } = options;
   return images.filter((image) => {
     if (!matchesFolderFilter(image, selectedFolder)) return false;
     if (!matchesTagFilter(image, selectedTag)) return false;
     if (!matchesSearchFilter(image, searchTerm)) return false;
     if (onlyCanonical && image.parentId) return false;
+    if (!matchesHiddenFolderFilter(image, hiddenFolders)) return false;
     return true;
   });
 };
