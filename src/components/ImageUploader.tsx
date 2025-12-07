@@ -85,6 +85,27 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
+  const formatUploadErrorMessage = useCallback((response: Response, payload: unknown) => {
+    if (response.status === 409 && payload && typeof payload === 'object' && 'duplicates' in payload) {
+      const data = payload as { error?: string; duplicates?: Array<{ filename?: string; folder?: string }> };
+      if (Array.isArray(data.duplicates) && data.duplicates.length > 0) {
+        const summary = data.duplicates
+          .map((dup) => {
+            const label = dup.filename || 'Untitled';
+            return dup.folder ? `${label} (${dup.folder})` : label;
+          })
+          .slice(0, 3)
+          .join(', ');
+        const extra = data.duplicates.length > 3 ? '…' : '';
+        return `${data.error || 'Duplicate filename detected.'} Existing: ${summary}${extra}`;
+      }
+    }
+    if (payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: string }).error === 'string') {
+      return (payload as { error?: string }).error as string;
+    }
+    return 'Upload failed';
+  }, []);
+
   const folderSelectOptions = useMemo(
     () => [
       { value: '', label: 'No folder' },
@@ -214,10 +235,11 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
               }, 500);
             }
           } else {
+            const errorMessage = formatUploadErrorMessage(response, result);
             setUploadedImages((prev) =>
               prev.map((img) =>
                 img.id === imageId
-                  ? { ...img, status: "error", error: result.error || "Upload failed" }
+                  ? { ...img, status: "error", error: errorMessage }
                   : img
               )
             );
@@ -250,7 +272,7 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
       setOriginalUrl("");
       setSelectedParentId("");
     },
-    [selectedFolder, tags, description, originalUrl, selectedParentId, onImageUploaded, fetchFolders]
+    [selectedFolder, tags, description, originalUrl, selectedParentId, onImageUploaded, fetchFolders, formatUploadErrorMessage]
   );
 
   // Handle drag and drop - either queue or upload immediately

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
+import { findDuplicatesByFilename, toDuplicateSummary } from '@/server/duplicateDetector';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -53,6 +54,17 @@ export async function POST(request: NextRequest) {
       return withCors(NextResponse.json(
         { error: 'File size must be less than 10MB' },
         { status: 400 }
+      ));
+    }
+
+    const duplicateMatches = await findDuplicatesByFilename(file.name);
+    if (duplicateMatches.length) {
+      return withCors(NextResponse.json(
+        {
+          error: `Duplicate filename "${file.name}" detected`,
+          duplicates: duplicateMatches.map(toDuplicateSummary)
+        },
+        { status: 409 }
       ));
     }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
+import { findDuplicatesByFilename, toDuplicateSummary } from '@/server/duplicateDetector';
 
 export async function POST(request: NextRequest) {
   try {
@@ -67,6 +68,17 @@ export async function POST(request: NextRequest) {
     };
 
     buffer = await shrinkIfNeeded(buffer, file.type);
+
+    const duplicateMatches = await findDuplicatesByFilename(file.name);
+    if (duplicateMatches.length) {
+      return NextResponse.json(
+        {
+          error: `Duplicate filename "${file.name}" detected`,
+          duplicates: duplicateMatches.map(toDuplicateSummary)
+        },
+        { status: 409 }
+      );
+    }
 
     // Upload to Cloudflare Images
     const uploadFormData = new FormData();

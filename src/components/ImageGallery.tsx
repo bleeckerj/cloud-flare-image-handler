@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo, CSSProperties, useRef, useCallback } from 'react';
-import { Trash2, Copy, ExternalLink, Sparkles, Layers } from 'lucide-react';
+import { Trash2, Copy, ExternalLink, Sparkles, Layers, AlertTriangle } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import MonoSelect from './MonoSelect';
@@ -87,7 +87,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         viewMode: 'grid' as 'grid' | 'list',
         filtersCollapsed: false,
         bulkFolderInput: '',
-        bulkFolderMode: 'existing' as 'existing' | 'new'
+        bulkFolderMode: 'existing' as 'existing' | 'new',
+        showDuplicatesOnly: false
       };
     }
     try {
@@ -103,6 +104,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           searchTerm?: string;
           viewMode?: 'grid' | 'list';
           filtersCollapsed?: boolean;
+          showDuplicatesOnly?: boolean;
         };
         return {
           variant: typeof parsed.variant === 'string' ? parsed.variant : 'public',
@@ -115,7 +117,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           viewMode: parsed.viewMode === 'list' ? 'list' : 'grid',
           filtersCollapsed: Boolean(parsed.filtersCollapsed),
           bulkFolderInput: typeof parsed.bulkFolderInput === 'string' ? parsed.bulkFolderInput : '',
-          bulkFolderMode: parsed.bulkFolderMode === 'new' ? 'new' : 'existing'
+          bulkFolderMode: parsed.bulkFolderMode === 'new' ? 'new' : 'existing',
+          showDuplicatesOnly: Boolean(parsed.showDuplicatesOnly)
         };
       }
     } catch (error) {
@@ -132,7 +135,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       viewMode: 'grid',
       filtersCollapsed: false,
       bulkFolderInput: '',
-      bulkFolderMode: 'existing'
+      bulkFolderMode: 'existing',
+      showDuplicatesOnly: false
     };
   };
 
@@ -162,6 +166,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [bulkApplyTags, setBulkApplyTags] = useState(false);
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState<boolean>(storedPreferencesRef.current.showDuplicatesOnly ?? false);
   const utilityButtonClasses = 'text-[0.65rem] font-mono px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 transition';
 
   useEffect(() => {
@@ -178,12 +183,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         viewMode,
         filtersCollapsed,
         bulkFolderInput,
-        bulkFolderMode
+        bulkFolderMode,
+        showDuplicatesOnly
       }));
     } catch (error) {
       console.warn('Failed to save gallery prefs', error);
     }
-  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants, selectedFolder, selectedTag, searchTerm, viewMode, filtersCollapsed, bulkFolderInput, bulkFolderMode]);
+  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants, selectedFolder, selectedTag, searchTerm, viewMode, filtersCollapsed, bulkFolderInput, bulkFolderMode, showDuplicatesOnly]);
   useEffect(() => {
     persistHiddenFolders(hiddenFolders);
   }, [hiddenFolders]);
@@ -513,6 +519,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     });
   }, []);
 
+
   useEffect(() => {
     if (!bulkSelectionMode && selectedImageIds.size) {
       clearSelection();
@@ -741,6 +748,87 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     return map;
   }, [images]);
 
+  const duplicateGroups = useMemo(() => {
+    const byFilename = new Map<string, CloudflareImage[]>();
+    images.forEach((image) => {
+      const key = image.filename?.trim().toLowerCase();
+      if (!key) {
+        return;
+      }
+      byFilename.set(key, [...(byFilename.get(key) || []), image]);
+    });
+    return Array.from(byFilename.entries())
+      .filter(([, group]) => group.length > 1)
+      .map(([key, group]) => ({
+        key,
+        label: group[0]?.filename || key,
+        items: group
+      }));
+  }, [images]);
+
+  const duplicateIds = useMemo(() => {
+    const ids = new Set<string>();
+    duplicateGroups.forEach((group) => {
+      group.items.forEach((image) => ids.add(image.id));
+    });
+    return ids;
+  }, [duplicateGroups]);
+
+  const duplicateFilenameCount = duplicateGroups.length;
+  const duplicateImageCount = duplicateIds.size;
+
+  const selectDuplicateImages = useCallback(() => {
+    if (!duplicateIds.size) {
+      toast.push('No duplicates detected');
+      return;
+    }
+    setBulkSelectionMode(true);
+    setSelectedImageIds(prev => {
+      const next = new Set(prev);
+      duplicateIds.forEach(id => next.add(id));
+      return next;
+    });
+    toast.push('Duplicate images selected');
+  }, [duplicateIds, toast]);
+
+  const selectDuplicatesKeepSingle = useCallback(
+    (strategy: 'newest' | 'oldest') => {
+      if (!duplicateGroups.length) {
+        toast.push('No duplicates detected');
+        return;
+      }
+      const idsToKeep = new Set<string>();
+      duplicateGroups.forEach((group) => {
+        const sorted = [...group.items].sort((a, b) =>
+          strategy === 'newest'
+            ? new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime()
+            : new Date(a.uploaded).getTime() - new Date(b.uploaded).getTime()
+        );
+        if (sorted[0]) {
+          idsToKeep.add(sorted[0].id);
+        }
+      });
+      setBulkSelectionMode(true);
+      setSelectedImageIds(() => {
+        const next = new Set<string>();
+        duplicateGroups.forEach((group) => {
+          group.items.forEach((image) => {
+            if (!idsToKeep.has(image.id)) {
+              next.add(image.id);
+            }
+          });
+        });
+        return next;
+      });
+      toast.push(
+        strategy === 'newest'
+          ? 'Selected duplicates (keeping newest copy per filename)'
+          : 'Selected duplicates (keeping oldest copy per filename)'
+      );
+    },
+    [duplicateGroups, toast]
+  );
+
   const uniqueTags = useMemo(
     () => Array.from(new Set(images.flatMap(img => Array.isArray(img.tags) ? img.tags.filter(tag => tag && tag.trim()) : []))),
     [images]
@@ -794,7 +882,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 
   const isSvgImage = (img: CloudflareImage) => img.filename?.toLowerCase().endsWith('.svg') ?? false;
 
-  const filteredImages = useMemo(() => {
+  const baseFilteredImages = useMemo(() => {
     return filterImagesForGallery(images, {
       selectedFolder,
       selectedTag,
@@ -804,17 +892,32 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     });
   }, [images, selectedFolder, selectedTag, searchTerm, onlyCanonical, hiddenFolders]);
 
+  const duplicateFilteredImages = useMemo(() => {
+    if (!showDuplicatesOnly) {
+      return baseFilteredImages;
+    }
+    return baseFilteredImages.filter((image) => duplicateIds.has(image.id));
+  }, [baseFilteredImages, showDuplicatesOnly, duplicateIds]);
+
+  const duplicatesSortedByFilename = useMemo(() => {
+    return showDuplicatesOnly
+      ? [...duplicateFilteredImages].sort((a, b) =>
+          (a.filename || '').localeCompare(b.filename || '')
+        )
+      : duplicateFilteredImages;
+  }, [duplicateFilteredImages, showDuplicatesOnly]);
+
   const filteredWithVariants = useMemo(() => {
     if (!onlyWithVariants) {
-      return filteredImages;
+      return duplicatesSortedByFilename;
     }
     const parentIdsWithChildren = new Set(
       Object.entries(childrenMap)
         .filter(([, value]) => (value?.length ?? 0) > 0)
         .map(([key]) => key)
     );
-    return filteredImages.filter(image => parentIdsWithChildren.has(image.id));
-  }, [filteredImages, onlyWithVariants, childrenMap]);
+    return duplicatesSortedByFilename.filter(image => parentIdsWithChildren.has(image.id));
+  }, [duplicatesSortedByFilename, onlyWithVariants, childrenMap]);
 
   const sortedImages = useMemo(() => {
     return [...filteredWithVariants].sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
@@ -830,7 +933,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   useEffect(() => {
     setCurrentPage(1);
     scrollGalleryToTop();
-  }, [selectedFolder, selectedTag, searchTerm, onlyWithVariants, scrollGalleryToTop]);
+  }, [selectedFolder, selectedTag, searchTerm, onlyWithVariants, showDuplicatesOnly, scrollGalleryToTop]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1010,6 +1113,40 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           </div>
         )}
 
+        {duplicateFilenameCount > 0 && (
+          <div className="mb-4 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[0.65rem] font-mono text-amber-900">
+            <div>
+              Found {duplicateFilenameCount} duplicate filename{duplicateFilenameCount === 1 ? '' : 's'} affecting {duplicateImageCount} image{duplicateImageCount === 1 ? '' : 's'}.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setShowDuplicatesOnly(prev => !prev)}
+                className="px-3 py-1 rounded-md border border-amber-300 bg-white text-amber-900 hover:bg-amber-100 transition"
+              >
+                {showDuplicatesOnly ? 'Show all images' : 'Show duplicates only'}
+              </button>
+              <button
+                onClick={selectDuplicateImages}
+                className="px-3 py-1 rounded-md border border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200 transition"
+              >
+                Select all duplicates
+              </button>
+              <button
+                onClick={() => selectDuplicatesKeepSingle('newest')}
+                className="px-3 py-1 rounded-md border border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200 transition"
+              >
+                Select duplicates (keep newest)
+              </button>
+              <button
+                onClick={() => selectDuplicatesKeepSingle('oldest')}
+                className="px-3 py-1 rounded-md border border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200 transition"
+              >
+                Select duplicates (keep oldest)
+              </button>
+            </div>
+          </div>
+        )}
+
         <div
           className={`overflow-hidden transition-[max-height] duration-300 ease-in-out ${filtersCollapsed ? 'max-h-0' : 'max-h-[1200px]'}`}
           aria-hidden={filtersCollapsed}
@@ -1104,6 +1241,16 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 className="h-3 w-3 font-mono text-[0.7em] font-mono text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               parents
+            </label>
+            <label htmlFor="duplicates-filter" className="flex items-center gap-1 font-mono">
+              <input
+                id="duplicates-filter"
+                type="checkbox"
+                checked={showDuplicatesOnly}
+                onChange={(e) => setShowDuplicatesOnly(e.target.checked)}
+                className="h-3 w-3 font-mono text-[0.7em] font-mono text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              duplicates
             </label>
           </div>
           <div className="md:col-span-5">
@@ -1299,9 +1446,17 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   {/* Metadata footer */}
                   <div id="metadata-footer" className="px-3 py-2 bg-white border-t border-gray-100 flex-1 flex flex-col">
                     <div className="flex-1 flex flex-col gap-1">
-                      <p className="text-[0.6rem] font-mono font-semibold text-gray-900 truncate" title={image.filename} style={{ lineHeight: '1.2' }}>
-                        {image.filename}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[0.6rem] font-mono font-semibold text-gray-900 truncate" title={image.filename} style={{ lineHeight: '1.2' }}>
+                          {image.filename}
+                        </p>
+                        {duplicateIds.has(image.id) && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wide text-amber-800">
+                            <AlertTriangle className="h-3 w-3" />
+                            Duplicate
+                          </span>
+                        )}
+                      </div>
                       <div className="text-gray-500 text-[0.6rem] mt-1 space-y-0.5">
                         <p>{new Date(image.uploaded).toLocaleDateString()}</p>
                         <p>📁 {image.folder ? image.folder : '[none]'}</p>
@@ -1438,9 +1593,17 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   )}
                   
                   <div className="flex-1 min-w-0">
-                    <p className="text-[0.7em] font-mono font-mono font-medum text-gray-900 truncate">
-                      {image.filename}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[0.7em] font-mono font-mono font-medum text-gray-900 truncate">
+                        {image.filename}
+                      </p>
+                      {duplicateIds.has(image.id) && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wide text-amber-800">
+                          <AlertTriangle className="h-3 w-3" />
+                          Duplicate
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[0.7em] font-mono text-gray-500">
                       {new Date(image.uploaded).toLocaleDateString()}
                     </p>
