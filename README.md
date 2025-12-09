@@ -264,3 +264,4 @@ npm run test
 ## License
 
 MIT License - feel free to use this project for any purpose.
+- [docs/api/README.md](docs/api/README.md) – how to query/search the image API programmatically (GET `/api/images`, `/api/uploads`, etc.) including retrieving Cloudflare URLs at all sizes.

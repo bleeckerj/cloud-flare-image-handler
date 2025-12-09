@@ -11,6 +11,34 @@ const isValidUrl = (value: string) => {
   }
 };
 
+const IMAGE_EXTENSION_MIME_MAP: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+};
+
+const getMimeFromExtension = (value: string) => {
+  try {
+    const parsed = new URL(value);
+    const segments = parsed.pathname.split('.');
+    if (segments.length > 1) {
+      const ext = segments.pop()?.toLowerCase();
+      if (ext && IMAGE_EXTENSION_MIME_MAP[ext]) {
+        return IMAGE_EXTENSION_MIME_MAP[ext];
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+};
+
 const getFilenameFromUrl = (url: string, mimeType?: string | null) => {
   try {
     const parsed = new URL(url);
@@ -40,8 +68,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to download the image' }, { status: 400 });
     }
 
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.startsWith('image/')) {
+    const rawContentType = response.headers.get('content-type') ?? '';
+    const normalizedType = rawContentType.split(';')[0].trim().toLowerCase();
+    const inferredContentType =
+      (normalizedType && normalizedType.startsWith('image/')
+        ? normalizedType
+        : undefined) ?? getMimeFromExtension(sourceUrl);
+    if (!inferredContentType) {
       return NextResponse.json({ error: 'URL must point to an image' }, { status: 400 });
     }
 
@@ -52,11 +85,11 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(arrayBuffer);
     const base64 = buffer.toString('base64');
-    const filename = getFilenameFromUrl(sourceUrl, contentType);
+    const filename = getFilenameFromUrl(sourceUrl, inferredContentType);
 
     return NextResponse.json({
       name: filename,
-      type: contentType,
+      type: inferredContentType,
       size: buffer.length,
       data: base64,
       originalUrl: sourceUrl,

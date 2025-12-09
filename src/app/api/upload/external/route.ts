@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File;
 
     if (!file) {
+      logExternalIssue('No file provided');
       return withCors(NextResponse.json(
         { error: 'No file provided' },
         { status: 400 }
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!file.type.startsWith('image/')) {
+      logExternalIssue('Rejected non-image upload', { filename: file.name, type: file.type });
       return withCors(NextResponse.json(
         { error: 'File must be an image' },
         { status: 400 }
@@ -51,6 +53,7 @@ export async function POST(request: NextRequest) {
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
+      logExternalIssue('Rejected oversized upload', { filename: file.name, bytes: file.size, limit: maxSize });
       return withCors(NextResponse.json(
         { error: 'File size must be less than 10MB' },
         { status: 400 }
@@ -59,6 +62,11 @@ export async function POST(request: NextRequest) {
 
     const duplicateMatches = await findDuplicatesByFilename(file.name);
     if (duplicateMatches.length) {
+      console.warn('[upload/external] Duplicate filename detected', {
+        filename: file.name,
+        duplicateIds: duplicateMatches.map(match => match.id),
+        folders: duplicateMatches.map(match => match.folder || null)
+      });
       return withCors(NextResponse.json(
         {
           error: `Duplicate filename "${file.name}" detected`,
@@ -243,3 +251,6 @@ export async function POST(request: NextRequest) {
     ));
   }
 }
+const logExternalIssue = (message: string, details?: Record<string, unknown>) => {
+  console.warn('[upload/external] ' + message, details);
+};

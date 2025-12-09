@@ -3,6 +3,10 @@ import sharp from 'sharp';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
 import { findDuplicatesByFilename, toDuplicateSummary } from '@/server/duplicateDetector';
 
+const logIssue = (message: string, details?: Record<string, unknown>) => {
+  console.warn('[upload] ' + message, details);
+};
+
 export async function POST(request: NextRequest) {
   try {
     // Check for required environment variables
@@ -20,6 +24,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File;
     
     if (!file) {
+      logIssue('No file provided in form submission');
       return NextResponse.json(
         { error: 'No file provided' },
         { status: 400 }
@@ -28,6 +33,7 @@ export async function POST(request: NextRequest) {
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
+      logIssue('Rejected non-image upload', { filename: file.name, type: file.type });
       return NextResponse.json(
         { error: 'File must be an image' },
         { status: 400 }
@@ -37,6 +43,7 @@ export async function POST(request: NextRequest) {
     // Validate file size (max 10MB)
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
+      logIssue('Rejected oversized upload', { filename: file.name, bytes: file.size, limit: maxSize });
       return NextResponse.json(
         { error: 'File size must be less than 10MB' },
         { status: 400 }
@@ -71,6 +78,11 @@ export async function POST(request: NextRequest) {
 
     const duplicateMatches = await findDuplicatesByFilename(file.name);
     if (duplicateMatches.length) {
+      console.warn('[upload] Duplicate filename detected', {
+        filename: file.name,
+        duplicateIds: duplicateMatches.map(match => match.id),
+        folders: duplicateMatches.map(match => match.folder || null)
+      });
       return NextResponse.json(
         {
           error: `Duplicate filename "${file.name}" detected`,
