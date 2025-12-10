@@ -76,6 +76,35 @@ The API response includes `url` (permanent Cloudflare delivery) and a `variants`
 
 `POST /api/import` now tolerates responses whose `Content-Type` isn’t `image/*` as long as the URL path ends with a known image extension (`.jpg`, `.png`, `.webp`, etc.). The route infers the MIME from the extension and proceeds, so S3 links that stream `application/octet-stream` often upload without extra work. If the source URL lacks an image-like header or extension, download the bytes yourself, tag them with the desired MIME, and post directly to `/api/upload/external` so the upload still treats the blob as an image.
 
+### Rotating stored images
+
+If an asset looks sideways because of EXIF metadata, rotate it server-side via `POST /api/images/{id}/rotate`. The endpoint downloads the chosen Cloudflare variant, runs it through `sharp().rotate()` (or `rotate(degrees)` when you pass `direction: "left"` or `"right"`), re-uploads the corrected bytes with the original metadata, and returns the new Cloudflare delivery URL/variants plus `rotatedFromId` so you can track the replacement.
+
+**Request body**
+
+```json
+{
+  "direction": "right"
+}
+```
+
+- `direction` can be `"left"` or `"right"` to rotate a specific 90° step.  
+- Omitting `direction` (or sending `{ "auto": true }`) simply honors the EXIF orientation flag.
+
+**Sample fetch**
+
+```js
+const response = await fetch(`/api/images/${imageId}/rotate`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ direction: 'right' })
+});
+const body = await response.json();
+console.log('New Cloudflare URL', body.url);
+```
+
+The response also includes `message` advising that a new Cloudflare URL was created; update any persisted references, and consider showing a persistent toast warning that the old delivery URL must be replaced.
+
 ### Error details for 400 responses
 
 When `/api/upload/external` returns 400, the body is still JSON and includes an `error` string that explains what validation failed (e.g., `"No file provided"`, `"File must be an image"`, `"File size must be less than 10MB"`). For duplicate filenames you also get a `duplicates` array with summaries of the existing assets so you can surface (“Duplicate filename detected…”) or skip retries. Always parse the JSON body instead of relying on the status text so you see the actionable message.

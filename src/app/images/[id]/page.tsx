@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getMultipleImageUrls, getCloudflareImageUrl } from '@/utils/imageUtils';
 import { useToast } from '@/components/Toast';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, RotateCcw, RotateCw } from 'lucide-react';
 import FolderManagerButton from '@/components/FolderManagerButton';
 import MonoSelect from '@/components/MonoSelect';
 import { useDropzone } from 'react-dropzone';
@@ -103,6 +103,10 @@ export default function ImageDetailPage() {
   const [uniqueFolders, setUniqueFolders] = useState<string[]>([]);
 const [newFolderInput, setNewFolderInput] = useState('');
   const [variantModalState, setVariantModalState] = useState<{ target: CloudflareImage } | null>(null);
+  const [previewRotation, setPreviewRotation] = useState(0);
+  const [rotationLoading, setRotationLoading] = useState(false);
+  const [rotationError, setRotationError] = useState<string | null>(null);
+  const [rotatedAsset, setRotatedAsset] = useState<{ id: string; url: string; info?: string } | null>(null);
 
   useEffect(() => {
     setVariationPage(1);
@@ -271,6 +275,20 @@ const [newFolderInput, setNewFolderInput] = useState('');
     [id]
   );
 
+  const heroRotationStyle = useMemo<CSSProperties>(
+    () => ({
+      transform: `rotate(${previewRotation}deg)`,
+      transition: 'transform 200ms ease',
+      transformOrigin: 'center center'
+    }),
+    [previewRotation]
+  );
+
+  const normalizedRotation = useMemo(
+    () => ((previewRotation % 360) + 360) % 360,
+    [previewRotation]
+  );
+
   const isChildImage = Boolean(image?.parentId);
   const variationCount = displayedVariations.length;
 
@@ -331,6 +349,44 @@ const [newFolderInput, setNewFolderInput] = useState('');
       prompt('Copy this text manually:', text);
     }
   };
+
+  const adjustRotationPreview = useCallback((delta: number) => {
+    setPreviewRotation((prev) => prev + delta);
+    setRotationError(null);
+    setRotatedAsset(null);
+  }, []);
+
+  const handleConfirmRotation = useCallback(async () => {
+    if (!image) return;
+    if (normalizedRotation === 0) {
+      setRotationError('Rotate left or right before confirming');
+      return;
+    }
+    setRotationLoading(true);
+    setRotationError(null);
+    try {
+      const response = await fetch(`/api/images/${image.id}/rotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ degrees: normalizedRotation })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to rotate image');
+      }
+      toast.push('Image rotated and re-uploaded');
+      const newId = payload.id || image.id;
+      const newUrl = payload.url || '';
+      setRotatedAsset({ id: newId, url: newUrl, info: payload.message });
+      setPreviewRotation(0);
+      await refreshImageList();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Rotation failed';
+      setRotationError(message);
+    } finally {
+      setRotationLoading(false);
+    }
+  }, [image, normalizedRotation, refreshImageList, toast]);
 
   const handleCopyList = useCallback(async () => {
     if (!image) {
@@ -631,7 +687,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
             </Link>
           </div>
           <div id="image-hero-section" className="w-full mb-4">
-            <div className="relative w-full aspect-[3/2] bg-gray-100 rounded">
+            <div className="relative w-full aspect-[3/2] bg-gray-100 rounded overflow-hidden">
               <Image
                 src={originalDeliveryUrl}
                 alt={image.filename || 'image'}
@@ -639,7 +695,75 @@ const [newFolderInput, setNewFolderInput] = useState('');
                 className="object-contain"
                 unoptimized
                 priority
+                style={heroRotationStyle}
               />
+            </div>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-gray-600">Rotation preview</span>
+                <span className="text-gray-500">{normalizedRotation}°</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => adjustRotationPreview(-90)}
+                  disabled={rotationLoading}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Left
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustRotationPreview(90)}
+                  disabled={rotationLoading}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RotateCw className="h-4 w-4" />
+                  Right
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmRotation}
+                  disabled={rotationLoading || normalizedRotation === 0}
+                  className="inline-flex items-center gap-1 px-4 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  {rotationLoading ? 'Rotating…' : 'Confirm rotation'}
+                </button>
+              </div>
+              {rotationError && (
+                <p className="text-[11px] text-red-600">{rotationError}</p>
+              )}
+              {rotatedAsset && (
+                <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-[11px] text-blue-900 space-y-1">
+                  <p className="font-semibold text-blue-800">Rotated asset created</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(rotatedAsset.url, 'Rotated image', 'Rotated URL copied')}
+                      className="px-2 py-1 border border-blue-200 rounded text-[11px] text-blue-700 hover:border-blue-300"
+                    >
+                      Copy new CDN URL
+                    </button>
+                    <Link
+                      href={`/images/${rotatedAsset.id}`}
+                      className="text-[11px] text-blue-700 underline"
+                      prefetch={false}
+                    >
+                      View rotated asset
+                    </Link>
+                  </div>
+                  <p className="text-[10px] text-blue-700 leading-snug break-all">
+                    {rotatedAsset.url}
+                  </p>
+                  <p className="text-[10px] text-blue-700">
+                    Update any existing references—the Cloudflare delivery URL changed.
+                  </p>
+                  {rotatedAsset.info && (
+                    <p className="text-[10px] text-blue-600 italic">{rotatedAsset.info}</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
