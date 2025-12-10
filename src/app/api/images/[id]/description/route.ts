@@ -99,8 +99,9 @@ export async function POST(
     }
 
     const userText = [
-      'Write a polished, human-friendly description (1-2 short paragraphs) for this image used in a design portfolio CMS.',
-      'Highlight the subject, setting, visual style, and why it matters. Avoid lists, hashtags, or referencing accessibility requirements.',
+      'Write a polished, concise description (1-2 short paragraphs) for this image used in a design portfolio CMS.',
+      'If the image presents a familiar object, scene, setting, or person (type of product, interior, landscape, etc.), describe it or them succintly and clearly but avoid generic phrases.',
+      'Highlight the subject, objects, brands, text, setting, visual style. Avoid lists, hashtags, or referencing accessibility requirements.',
       'Return only the description text without markdown or labels.',
       contextSegments.length ? `Context:\n${contextSegments.join('\n')}` : null
     ]
