@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 import sharp from 'sharp';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
-import { findDuplicatesByFilename, toDuplicateSummary } from '@/server/duplicateDetector';
+import { findDuplicatesByContentHash, findDuplicatesByOriginalUrl, toDuplicateSummary } from '@/server/duplicateDetector';
+import { normalizeOriginalUrl } from '@/utils/urlNormalization';
 
 const logIssue = (message: string, details?: Record<string, unknown>) => {
   console.warn('[upload] ' + message, details);
@@ -50,6 +52,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const computeContentHash = (payload: Buffer) =>
+      createHash('sha256').update(payload).digest('hex');
+
+    // Get folder, tags, description, and originalUrl from form data
+    const folder = formData.get('folder') as string;
+    const tags = formData.get('tags') as string;
+    const description = formData.get('description') as string;
+    const originalUrl = formData.get('originalUrl') as string;
+    const parentIdRaw = formData.get('parentId');
+    
+    // Clean up values - handle empty strings and "undefined" strings
+    const cleanFolder = folder && folder.trim() && folder !== 'undefined' ? folder.trim() : undefined;
+    const cleanTags = tags && tags.trim() ? tags.trim().split(',').map(t => t.trim()).filter(t => t) : [];
+    const cleanDescription = description && description.trim() && description !== 'undefined' ? description.trim() : undefined;
+    const cleanOriginalUrl = originalUrl && originalUrl.trim() && originalUrl !== 'undefined' ? originalUrl.trim() : undefined;
+    const normalizedOriginalUrl = normalizeOriginalUrl(cleanOriginalUrl);
+    const parentIdValue = typeof parentIdRaw === 'string' ? parentIdRaw.trim() : '';
+    const cleanParentId = parentIdValue && parentIdValue !== 'undefined' ? parentIdValue : undefined;
+
+    let duplicateMatches: Awaited<ReturnType<typeof findDuplicatesByOriginalUrl>> = [];
+    if (normalizedOriginalUrl) {
+      duplicateMatches = await findDuplicatesByOriginalUrl(normalizedOriginalUrl);
+      if (duplicateMatches.length) {
+        console.warn('[upload] Duplicate original URL detected', {
+          originalUrl: cleanOriginalUrl,
+          duplicateIds: duplicateMatches.map(match => match.id),
+          folders: duplicateMatches.map(match => match.folder || null)
+        });
+        return NextResponse.json(
+          {
+            error: `Duplicate original URL "${cleanOriginalUrl}" detected`,
+            duplicates: duplicateMatches.map(toDuplicateSummary)
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     // Convert file to buffer and shrink if necessary
     const bytes = await file.arrayBuffer();
     let buffer = Buffer.from(bytes);
@@ -75,41 +115,29 @@ export async function POST(request: NextRequest) {
     };
 
     buffer = await shrinkIfNeeded(buffer, file.type);
+    const contentHash = computeContentHash(buffer);
 
-    const duplicateMatches = await findDuplicatesByFilename(file.name);
-    if (duplicateMatches.length) {
-      console.warn('[upload] Duplicate filename detected', {
-        filename: file.name,
-        duplicateIds: duplicateMatches.map(match => match.id),
-        folders: duplicateMatches.map(match => match.folder || null)
-      });
-      return NextResponse.json(
-        {
-          error: `Duplicate filename "${file.name}" detected`,
-          duplicates: duplicateMatches.map(toDuplicateSummary)
-        },
-        { status: 409 }
-      );
+    if (!normalizedOriginalUrl) {
+      duplicateMatches = await findDuplicatesByContentHash(contentHash);
+      if (duplicateMatches.length) {
+        console.warn('[upload] Duplicate content hash detected', {
+          contentHash,
+          duplicateIds: duplicateMatches.map(match => match.id),
+          folders: duplicateMatches.map(match => match.folder || null)
+        });
+        return NextResponse.json(
+          {
+            error: 'Duplicate image content detected',
+            duplicates: duplicateMatches.map(toDuplicateSummary)
+          },
+          { status: 409 }
+        );
+      }
     }
 
     // Upload to Cloudflare Images
     const uploadFormData = new FormData();
     uploadFormData.append('file', new Blob([buffer], { type: file.type }), file.name);
-    
-    // Get folder, tags, description, and originalUrl from form data
-    const folder = formData.get('folder') as string;
-    const tags = formData.get('tags') as string;
-    const description = formData.get('description') as string;
-    const originalUrl = formData.get('originalUrl') as string;
-    const parentIdRaw = formData.get('parentId');
-    
-    // Clean up values - handle empty strings and "undefined" strings
-    const cleanFolder = folder && folder.trim() && folder !== 'undefined' ? folder.trim() : undefined;
-    const cleanTags = tags && tags.trim() ? tags.trim().split(',').map(t => t.trim()).filter(t => t) : [];
-    const cleanDescription = description && description.trim() && description !== 'undefined' ? description.trim() : undefined;
-    const cleanOriginalUrl = originalUrl && originalUrl.trim() && originalUrl !== 'undefined' ? originalUrl.trim() : undefined;
-    const parentIdValue = typeof parentIdRaw === 'string' ? parentIdRaw.trim() : '';
-    const cleanParentId = parentIdValue && parentIdValue !== 'undefined' ? parentIdValue : undefined;
 
     // Add metadata including organization info
     const metadataPayload: Record<string, unknown> = {
@@ -121,6 +149,8 @@ export async function POST(request: NextRequest) {
       tags: cleanTags,
       description: cleanDescription,
       originalUrl: cleanOriginalUrl,
+      originalUrlNormalized: normalizedOriginalUrl,
+      contentHash,
       variationParentId: cleanParentId,
     };
 

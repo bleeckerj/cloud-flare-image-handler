@@ -1,4 +1,5 @@
 import { cleanString, parseCloudflareMetadata } from '@/utils/cloudflareMetadata';
+import { normalizeOriginalUrl } from '@/utils/urlNormalization';
 
 interface CloudflareImageApiResponse {
   id: string;
@@ -17,6 +18,8 @@ export interface CachedCloudflareImage {
   tags: string[];
   description?: string;
   originalUrl?: string;
+  originalUrlNormalized?: string;
+  contentHash?: string;
   altTag?: string;
   parentId?: string;
   linkedAssetId?: string;
@@ -71,8 +74,18 @@ const transformImage = (image: CloudflareImageApiResponse): CachedCloudflareImag
     parsedMeta.originalUrl && parsedMeta.originalUrl !== 'undefined'
       ? parsedMeta.originalUrl
       : undefined;
+  const cleanOriginalUrlNormalized =
+    parsedMeta.originalUrlNormalized && parsedMeta.originalUrlNormalized !== 'undefined'
+      ? parsedMeta.originalUrlNormalized
+      : undefined;
+  const normalizedOriginalUrl =
+    cleanOriginalUrlNormalized ?? normalizeOriginalUrl(cleanOriginalUrl);
   const cleanAltTag =
     parsedMeta.altTag && parsedMeta.altTag !== 'undefined' ? parsedMeta.altTag : undefined;
+  const cleanContentHash =
+    parsedMeta.contentHash && parsedMeta.contentHash !== 'undefined'
+      ? parsedMeta.contentHash
+      : undefined;
   const parentId = cleanString(parsedMeta.variationParentId);
   const linkedAssetId = cleanString(parsedMeta.linkedAssetId);
 
@@ -85,6 +98,8 @@ const transformImage = (image: CloudflareImageApiResponse): CachedCloudflareImag
     tags: cleanTags,
     description: cleanDescription,
     originalUrl: cleanOriginalUrl,
+    originalUrlNormalized: normalizedOriginalUrl,
+    contentHash: cleanContentHash,
     altTag: cleanAltTag,
     parentId,
     linkedAssetId

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 import sharp from 'sharp';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
-import { findDuplicatesByFilename, toDuplicateSummary } from '@/server/duplicateDetector';
+import { findDuplicatesByContentHash, findDuplicatesByOriginalUrl, toDuplicateSummary } from '@/server/duplicateDetector';
+import { normalizeOriginalUrl } from '@/utils/urlNormalization';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -60,27 +62,8 @@ export async function POST(request: NextRequest) {
       ));
     }
 
-    const duplicateMatches = await findDuplicatesByFilename(file.name);
-    if (duplicateMatches.length) {
-      console.warn('[upload/external] Duplicate filename detected', {
-        filename: file.name,
-        duplicateIds: duplicateMatches.map(match => match.id),
-        folders: duplicateMatches.map(match => match.folder || null)
-      });
-      return withCors(NextResponse.json(
-        {
-          error: `Duplicate filename "${file.name}" detected`,
-          duplicates: duplicateMatches.map(toDuplicateSummary)
-        },
-        { status: 409 }
-      ));
-    }
-
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    const uploadFormData = new FormData();
-    uploadFormData.append('file', new Blob([buffer], { type: file.type }), file.name);
+    const computeContentHash = (payload: Buffer) =>
+      createHash('sha256').update(payload).digest('hex');
 
     const folder = formData.get('folder') as string;
     const tags = formData.get('tags') as string;
@@ -92,8 +75,53 @@ export async function POST(request: NextRequest) {
     const cleanTags = tags && tags.trim() ? tags.trim().split(',').map(t => t.trim()).filter(Boolean) : [];
     const cleanDescription = description && description.trim() && description !== 'undefined' ? description.trim() : undefined;
     const cleanOriginalUrl = originalUrl && originalUrl.trim() && originalUrl !== 'undefined' ? originalUrl.trim() : undefined;
+    const normalizedOriginalUrl = normalizeOriginalUrl(cleanOriginalUrl);
     const parentIdValue = typeof parentIdRaw === 'string' ? parentIdRaw.trim() : '';
     const cleanParentId = parentIdValue && parentIdValue !== 'undefined' ? parentIdValue : undefined;
+
+    let duplicateMatches: Awaited<ReturnType<typeof findDuplicatesByOriginalUrl>> = [];
+    if (normalizedOriginalUrl) {
+      duplicateMatches = await findDuplicatesByOriginalUrl(normalizedOriginalUrl);
+      if (duplicateMatches.length) {
+        console.warn('[upload/external] Duplicate original URL detected', {
+          originalUrl: cleanOriginalUrl,
+          duplicateIds: duplicateMatches.map(match => match.id),
+          folders: duplicateMatches.map(match => match.folder || null)
+        });
+        return withCors(NextResponse.json(
+          {
+            error: `Duplicate original URL "${cleanOriginalUrl}" detected`,
+            duplicates: duplicateMatches.map(toDuplicateSummary)
+          },
+          { status: 409 }
+        ));
+      }
+    }
+
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    const contentHash = computeContentHash(buffer);
+
+    if (!normalizedOriginalUrl) {
+      duplicateMatches = await findDuplicatesByContentHash(contentHash);
+      if (duplicateMatches.length) {
+        console.warn('[upload/external] Duplicate content hash detected', {
+          contentHash,
+          duplicateIds: duplicateMatches.map(match => match.id),
+          folders: duplicateMatches.map(match => match.folder || null)
+        });
+        return withCors(NextResponse.json(
+          {
+            error: 'Duplicate image content detected',
+            duplicates: duplicateMatches.map(toDuplicateSummary)
+          },
+          { status: 409 }
+        ));
+      }
+    }
+
+    const uploadFormData = new FormData();
+    uploadFormData.append('file', new Blob([buffer], { type: file.type }), file.name);
 
     const metadataPayload: Record<string, unknown> = {
       filename: file.name,
@@ -104,6 +132,8 @@ export async function POST(request: NextRequest) {
       tags: cleanTags,
       description: cleanDescription,
       originalUrl: cleanOriginalUrl,
+      originalUrlNormalized: normalizedOriginalUrl,
+      contentHash,
       variationParentId: cleanParentId,
     };
 

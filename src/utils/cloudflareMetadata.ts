@@ -3,6 +3,8 @@ export type CloudflareMetadata = {
   tags?: string[];
   description?: string;
   originalUrl?: string;
+  originalUrlNormalized?: string;
+  contentHash?: string;
   altTag?: string;
   filename?: string;
   variationParentId?: string;

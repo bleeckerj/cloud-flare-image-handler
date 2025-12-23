@@ -27,6 +27,8 @@ interface CloudflareImage {
   parentId?: string;
   linkedAssetId?: string;
   originalUrl?: string;
+  originalUrlNormalized?: string;
+  contentHash?: string;
 }
 
 interface ImageGalleryProps {
@@ -748,21 +750,55 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     return map;
   }, [images]);
 
-  const duplicateGroups = useMemo(() => {
-    const byFilename = new Map<string, CloudflareImage[]>();
-    images.forEach((image) => {
-      const key = image.filename?.trim().toLowerCase();
-      if (!key) {
-        return;
+  type DuplicateReason = 'originalUrl+contentHash';
+
+  const normalizeUrlKey = (value?: string) => {
+    if (!value) return undefined;
+    try {
+      const parsed = new URL(value);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return undefined;
       }
-      byFilename.set(key, [...(byFilename.get(key) || []), image]);
+      const origin = `${parsed.protocol}//${parsed.host}`;
+      return `${origin}${parsed.pathname || '/'}${parsed.search}`;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const normalizeHashKey = (value?: string) => {
+    if (!value) return undefined;
+    const trimmed = value.trim().toLowerCase();
+    return /^[a-f0-9]{64}$/.test(trimmed) ? trimmed : undefined;
+  };
+
+  const duplicateGroups = useMemo(() => {
+    const byKey = new Map<string, { items: CloudflareImage[]; reason: DuplicateReason }>();
+
+    images.forEach((image) => {
+      const keyFromUrl = normalizeUrlKey(image.originalUrlNormalized);
+      const keyFromHash = normalizeHashKey(image.contentHash);
+
+      // Only consider duplicates when BOTH URL and content hash are present and match.
+      if (!keyFromUrl || !keyFromHash) return;
+
+      const reason: DuplicateReason = 'originalUrl+contentHash';
+      const mapKey = `${keyFromUrl}|${keyFromHash}`;
+      const existing = byKey.get(mapKey);
+      if (existing) {
+        existing.items.push(image);
+      } else {
+        byKey.set(mapKey, { items: [image], reason });
+      }
     });
-    return Array.from(byFilename.entries())
-      .filter(([, group]) => group.length > 1)
+
+    return Array.from(byKey.entries())
+      .filter(([, group]) => group.items.length > 1)
       .map(([key, group]) => ({
         key,
-        label: group[0]?.filename || key,
-        items: group
+        reason: group.reason,
+        label: 'Original URL + content hash',
+        items: group.items
       }));
   }, [images]);
 
@@ -774,7 +810,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     return ids;
   }, [duplicateGroups]);
 
-  const duplicateFilenameCount = duplicateGroups.length;
+  const duplicateGroupCount = duplicateGroups.length;
   const duplicateImageCount = duplicateIds.size;
 
   const selectDuplicateImages = useCallback(() => {
@@ -1113,10 +1149,10 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           </div>
         )}
 
-        {duplicateFilenameCount > 0 && (
+        {duplicateGroupCount > 0 && (
           <div className="mb-4 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[0.65rem] font-mono text-amber-900">
             <div>
-              Found {duplicateFilenameCount} duplicate filename{duplicateFilenameCount === 1 ? '' : 's'} affecting {duplicateImageCount} image{duplicateImageCount === 1 ? '' : 's'}.
+              Found {duplicateGroupCount} duplicate group{duplicateGroupCount === 1 ? '' : 's'} affecting {duplicateImageCount} image{duplicateImageCount === 1 ? '' : 's'} (must match both original URL and content hash).
             </div>
             <div className="flex flex-wrap gap-2">
               <button

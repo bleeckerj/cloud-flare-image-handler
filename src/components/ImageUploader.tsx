@@ -97,7 +97,7 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
           .slice(0, 3)
           .join(', ');
         const extra = data.duplicates.length > 3 ? '…' : '';
-        return `${data.error || 'Duplicate filename detected.'} Existing: ${summary}${extra}`;
+        return `${data.error || 'Duplicate detected.'} Existing: ${summary}${extra}`;
       }
     }
     if (payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: string }).error === 'string') {

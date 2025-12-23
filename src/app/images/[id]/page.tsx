@@ -22,6 +22,8 @@ interface CloudflareImage {
   tags?: string[];
   description?: string;
   originalUrl?: string;
+  originalUrlNormalized?: string;
+  contentHash?: string;
   altTag?: string;
   parentId?: string;
   linkedAssetId?: string;
@@ -872,6 +874,36 @@ const [newFolderInput, setNewFolderInput] = useState('');
                 >
                   Copy
                 </button>
+              </div>
+              <div className="mt-3 space-y-1 text-[11px] font-mono text-gray-600">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-700">Normalized:</span>
+                  <span className="truncate" title={image?.originalUrlNormalized || '—'}>
+                    {image?.originalUrlNormalized || '—'}
+                  </span>
+                  {image?.originalUrlNormalized && (
+                    <button
+                      onClick={async () => { await copyToClipboard(image.originalUrlNormalized as string, 'Normalized URL'); }}
+                      className="px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-100 text-[10px]"
+                    >
+                      Copy
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-700">Hash:</span>
+                  <span className="truncate" title={image?.contentHash || '—'}>
+                    {image?.contentHash || '—'}
+                  </span>
+                  {image?.contentHash && (
+                    <button
+                      onClick={async () => { await copyToClipboard(image.contentHash as string, 'Content hash'); }}
+                      className="px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-100 text-[10px]"
+                    >
+                      Copy
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanString, parseCloudflareMetadata } from '@/utils/cloudflareMetadata';
+import { normalizeOriginalUrl } from '@/utils/urlNormalization';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
 
 export async function PATCH(
@@ -94,6 +95,7 @@ export async function PATCH(
 
     if (originalUrlProvided) {
       metadata.originalUrl = cleanOriginalUrl;
+      metadata.originalUrlNormalized = normalizeOriginalUrl(cleanOriginalUrl);
     }
 
     if (parentProvided) {
