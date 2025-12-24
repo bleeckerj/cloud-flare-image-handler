@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
 
     const metadataPayload: Record<string, unknown> = {
       filename: file.name,
+      displayName: file.name,
       uploadedAt: new Date().toISOString(),
       size: file.size,
       type: file.type,
@@ -184,6 +185,7 @@ export async function POST(request: NextRequest) {
         const webpMetadata = {
           ...metadataPayload,
           filename: webpName,
+          displayName: webpName,
           variationParentId: cleanParentId,
           linkedAssetId: imageData.id,
         };

@@ -17,6 +17,7 @@ import { filterImagesForGallery } from '@/utils/galleryFilter';
 interface CloudflareImage {
   id: string;
   filename: string;
+  displayName?: string;
   uploaded: string;
   variants: string[];
   folder?: string;
@@ -1450,13 +1451,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     {svgImage ? (
                       <img
                         src={displayUrl}
-                        alt={image.filename}
+                        alt={image.displayName || image.filename}
                         className={`absolute inset-0 w-full h-full ${respectAspectRatio ? 'object-contain bg-white' : 'object-cover'}`}
                       />
                     ) : (
                       <Image
                         src={displayUrl}
-                        alt={image.filename}
+                        alt={image.displayName || image.filename}
                         fill
                         className={respectAspectRatio ? 'object-contain bg-gray-50' : 'object-cover'}
                         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -1483,8 +1484,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   <div id="metadata-footer" className="px-3 py-2 bg-white border-t border-gray-100 flex-1 flex flex-col">
                     <div className="flex-1 flex flex-col gap-1">
                       <div className="flex items-center gap-2">
-                        <p className="text-[0.6rem] font-mono font-semibold text-gray-900 truncate" title={image.filename} style={{ lineHeight: '1.2' }}>
-                          {image.filename}
+                        <p className="text-[0.6rem] font-mono font-semibold text-gray-900 truncate" title={image.displayName || image.filename} style={{ lineHeight: '1.2' }}>
+                          {image.displayName || image.filename}
                         </p>
                         {duplicateIds.has(image.id) && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wide text-amber-800">

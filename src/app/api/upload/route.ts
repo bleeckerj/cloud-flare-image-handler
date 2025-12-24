@@ -142,6 +142,7 @@ export async function POST(request: NextRequest) {
     // Add metadata including organization info
     const metadataPayload: Record<string, unknown> = {
       filename: file.name,
+      displayName: file.name,
       uploadedAt: new Date().toISOString(),
       size: file.size,
       type: file.type,
@@ -199,6 +200,7 @@ export async function POST(request: NextRequest) {
         const webpMetadataPayload = {
           ...metadataPayload,
           filename: webpName,
+          displayName: webpName,
           variationParentId: cleanParentId,
           linkedAssetId: imageData.id,
         };

@@ -21,6 +21,7 @@ export interface CachedCloudflareImage {
   originalUrlNormalized?: string;
   contentHash?: string;
   altTag?: string;
+  displayName?: string;
   parentId?: string;
   linkedAssetId?: string;
 }
@@ -82,6 +83,10 @@ const transformImage = (image: CloudflareImageApiResponse): CachedCloudflareImag
     cleanOriginalUrlNormalized ?? normalizeOriginalUrl(cleanOriginalUrl);
   const cleanAltTag =
     parsedMeta.altTag && parsedMeta.altTag !== 'undefined' ? parsedMeta.altTag : undefined;
+  const displayName =
+    parsedMeta.displayName && parsedMeta.displayName !== 'undefined'
+      ? parsedMeta.displayName
+      : undefined;
   const cleanContentHash =
     parsedMeta.contentHash && parsedMeta.contentHash !== 'undefined'
       ? parsedMeta.contentHash
@@ -101,6 +106,7 @@ const transformImage = (image: CloudflareImageApiResponse): CachedCloudflareImag
     originalUrlNormalized: normalizedOriginalUrl,
     contentHash: cleanContentHash,
     altTag: cleanAltTag,
+    displayName: displayName ?? image.filename || parsedMeta.filename || undefined,
     parentId,
     linkedAssetId
   };

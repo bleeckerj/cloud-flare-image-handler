@@ -21,7 +21,7 @@ export async function PATCH(
 
     const { id: imageId } = await params;
     const body = await request.json();
-    const { folder, tags, description, originalUrl, parentId } = body;
+    const { folder, tags, description, originalUrl, parentId, displayName } = body;
     
     if (!imageId) {
       return NextResponse.json(
@@ -34,10 +34,12 @@ export async function PATCH(
     const tagsProvided = Object.prototype.hasOwnProperty.call(body, 'tags');
     const descriptionProvided = Object.prototype.hasOwnProperty.call(body, 'description');
     const originalUrlProvided = Object.prototype.hasOwnProperty.call(body, 'originalUrl');
+    const displayNameProvided = Object.prototype.hasOwnProperty.call(body, 'displayName');
 
     const cleanFolder = cleanString(typeof folder === 'string' ? folder : undefined);
     const cleanDescription = cleanString(typeof description === 'string' ? description : undefined);
     const cleanOriginalUrl = cleanString(typeof originalUrl === 'string' ? originalUrl : undefined);
+    const cleanDisplayName = cleanString(typeof displayName === 'string' ? displayName : undefined);
     const cleanTags = (() => {
       if (Array.isArray(tags)) {
         return tags
@@ -98,6 +100,10 @@ export async function PATCH(
       metadata.originalUrlNormalized = normalizeOriginalUrl(cleanOriginalUrl);
     }
 
+    if (displayNameProvided) {
+      metadata.displayName = cleanDisplayName ?? undefined;
+    }
+
     if (parentProvided) {
       metadata.variationParentId = cleanParentId;
     }
@@ -131,6 +137,8 @@ export async function PATCH(
     const finalTags = Array.isArray(metadata.tags) ? metadata.tags : [];
     const finalDescription = metadata.description as string | undefined;
     const finalOriginalUrl = metadata.originalUrl as string | undefined;
+    const finalDisplayName =
+      (metadata.displayName as string | undefined) ?? fetchedImageResult.result.filename;
 
     upsertCachedImage(
       transformApiImageToCached({
@@ -148,6 +156,7 @@ export async function PATCH(
       tags: finalTags,
       description: finalDescription,
       originalUrl: finalOriginalUrl,
+      displayName: finalDisplayName,
       parentId: finalParentId,
     });
 

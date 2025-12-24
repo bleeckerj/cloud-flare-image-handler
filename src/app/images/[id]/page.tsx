@@ -101,9 +101,10 @@ export default function ImageDetailPage() {
   const [descriptionInput, setDescriptionInput] = useState('');
   const [descriptionGenerating, setDescriptionGenerating] = useState(false);
   const [originalUrlInput, setOriginalUrlInput] = useState('');
+  const [displayNameInput, setDisplayNameInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [uniqueFolders, setUniqueFolders] = useState<string[]>([]);
-const [newFolderInput, setNewFolderInput] = useState('');
+  const [newFolderInput, setNewFolderInput] = useState('');
   const [variantModalState, setVariantModalState] = useState<{ target: CloudflareImage } | null>(null);
   const [previewRotation, setPreviewRotation] = useState(0);
   const [rotationLoading, setRotationLoading] = useState(false);
@@ -125,6 +126,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
         setDescriptionInput(found.description || '');
         setAltTextInput(found.altTag || '');
         setOriginalUrlInput(found.originalUrl || '');
+        setDisplayNameInput(found.displayName || found.filename || '');
         setReassignParentId(found.parentId || '');
         setChildUploadFolder(found.folder || '');
         setChildUploadTags(Array.isArray(found.tags) ? found.tags.join(', ') : '');
@@ -134,6 +136,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
         setDescriptionInput('');
         setAltTextInput('');
         setOriginalUrlInput('');
+        setDisplayNameInput('');
         setReassignParentId('');
         setChildUploadFolder('');
         setChildUploadTags('');
@@ -502,6 +505,26 @@ const [newFolderInput, setNewFolderInput] = useState('');
     }
   }, [image, toast]);
 
+  const handleDeleteCurrent = useCallback(async () => {
+    if (!image) return;
+    const prompt = isChildImage
+      ? 'Delete this image variation permanently?'
+      : 'Delete this image permanently? All variations will be detached.';
+    if (!confirm(prompt)) return;
+    try {
+      const response = await fetch(`/api/images/${image.id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error || 'Failed to delete image');
+      }
+      toast.push('Image deleted');
+      window.location.href = '/';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete image';
+      toast.push(message);
+    }
+  }, [image, isChildImage, toast]);
+
   const handleAdoptImage = useCallback(async () => {
     if (!adoptImageId) {
       return;
@@ -857,6 +880,19 @@ const [newFolderInput, setNewFolderInput] = useState('');
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs mt-2"
                 placeholder="Comma-separated tags"
               />
+            </div>
+
+            <div id="name-section">
+              <p className="text-xs font-mono font-medum text-gray-700">Display name (editable)</p>
+              <input
+                value={displayNameInput}
+                onChange={(e) => setDisplayNameInput(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs mt-2"
+                placeholder="Display name (defaults to filename)"
+              />
+              <p className="text-[11px] text-gray-600 mt-1">
+                Immutable filename: <span className="font-mono">{image?.filename || 'Unknown'}</span>
+              </p>
             </div>
 
             <div id="original-url-section">
@@ -1278,10 +1314,18 @@ const [newFolderInput, setNewFolderInput] = useState('');
               setTagsInput(image.tags ? image.tags.join(', ') : '');
               setDescriptionInput(image.description || '');
               setOriginalUrlInput(image.originalUrl || '');
+              setDisplayNameInput(image.displayName || image.filename || '');
             }}
             className="px-4 py-2 text-xs text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
           >
             Cancel
+          </button>
+          <button
+            onClick={handleDeleteCurrent}
+            className="px-4 py-2 text-xs border border-red-300 text-red-700 rounded-md hover:bg-red-50"
+            disabled={saving}
+          >
+            Delete image
           </button>
           <button
             onClick={async () => {
@@ -1295,6 +1339,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
                   tags: tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
                   description: descriptionInput || undefined,
                   originalUrl: originalUrlInput || undefined,
+                  displayName: displayNameInput || undefined,
                 };
                 const res = await fetch(`/api/images/${id}/update`, {
                   method: 'PATCH',
@@ -1304,7 +1349,7 @@ const [newFolderInput, setNewFolderInput] = useState('');
                 const body = await res.json() as CloudflareImage;
                 if (res.ok) {
                   toast.push('Metadata updated');
-                  setImage(prev => prev ? ({ ...prev, folder: body.folder, tags: body.tags, description: body.description, originalUrl: body.originalUrl }) : prev);
+                  setImage(prev => prev ? ({ ...prev, folder: body.folder, tags: body.tags, description: body.description, originalUrl: body.originalUrl, displayName: body.displayName }) : prev);
                   await refreshImageList();
                 } else {
                   toast.push(body.error || 'Failed to update metadata');
