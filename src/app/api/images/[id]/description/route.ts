@@ -99,7 +99,7 @@ export async function POST(
     }
 
     const userText = [
-      'Write a polished, concise description (1-2 short paragraphs) for this image used in a design portfolio CMS.',
+      'Write a concise description (1-2 short paragraphs) for this image used in a design portfolio CMS. Include relevant details that would help with a search for the image and a description of its content and setting.',
       'If the image presents a familiar object, scene, setting, or person (type of product, interior, landscape, etc.), describe it or them succintly and clearly but avoid generic phrases.',
       'Highlight the subject, objects, brands, text, setting, visual style. Avoid lists, hashtags, or referencing accessibility requirements.',
       'Return only the description text without markdown or labels.',

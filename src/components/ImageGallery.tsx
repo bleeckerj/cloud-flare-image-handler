@@ -228,6 +228,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [hoveredImage, setHoveredImage] = useState<string | null>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [showPreview, setShowPreview] = useState(false);
+  const [utilityExpanded, setUtilityExpanded] = useState(false);
   const galleryTopRef = useRef<HTMLDivElement | null>(null);
 
   const scrollGalleryToTop = useCallback(() => {
@@ -734,7 +735,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     const folderNames = images
       .map(img => img.folder?.trim())
       .filter((folder): folder is string => Boolean(folder));
-    return Array.from(new Set(folderNames));
+    return Array.from(new Set(folderNames)).sort((a, b) => a.localeCompare(b));
   }, [images]);
   const visibleFolders = useMemo(
     () => uniqueFolders.filter(folder => !hiddenFolders.includes(folder)),
@@ -1330,71 +1331,100 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         </div>
       </div>
 
-      <div className="hidden sm:block fixed bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-3 bg-gray-900 text-white border border-gray-700 rounded-full shadow-lg px-4 py-2">
-          <span className="uppercase tracking-wide text-[0.55rem] text-gray-400">Utility</span>
-          <button
-            onClick={() => setFiltersCollapsed(prev => !prev)}
-            className={utilityButtonClasses}
-            aria-pressed={!filtersCollapsed}
-          >
-            {filtersCollapsed ? 'Show filters' : 'Hide filters'}
-          </button>
-          {selectedCount > 0 && (
-            <div className="flex items-center gap-2 text-[0.6rem] text-white">
-              <span>{selectedCount} selected</span>
+      <div
+        className="hidden sm:block fixed right-4 top-1/2 -translate-y-1/2 z-30"
+        onMouseEnter={() => setUtilityExpanded(true)}
+        onMouseLeave={() => setUtilityExpanded(false)}
+        onFocusCapture={() => setUtilityExpanded(true)}
+        onBlurCapture={() => setUtilityExpanded(false)}
+      >
+        {utilityExpanded ? (
+          <div className="pointer-events-auto flex flex-col gap-3 bg-gray-900 text-white border border-gray-700 rounded-2xl shadow-xl px-4 py-3 min-w-[220px]">
+            <div className="flex items-center justify-between text-[0.6rem] uppercase tracking-wide text-gray-300">
+              <span>Utility</span>
               <button
-                onClick={() => selectAllOnPage(pageImages)}
-                className={`${utilityButtonClasses} border border-white/20`}
+                onClick={() => setUtilityExpanded(false)}
+                className="text-gray-400 hover:text-white"
+                aria-label="Collapse utility bar"
               >
-                Select page
-              </button>
-              <button
-                onClick={openBulkEditModal}
-                className={`${utilityButtonClasses} bg-blue-600 hover:bg-blue-500`}
-              >
-                Bulk edit
-              </button>
-              <button
-                onClick={clearSelection}
-                className={`${utilityButtonClasses} border border-white/20`}
-              >
-                Clear
+                ✕
               </button>
             </div>
-          )}
-          <div className="flex items-center gap-1 text-[0.6rem] text-gray-200">
             <button
-              onClick={goToPreviousPage}
-              disabled={pageIndex === 1}
-              className={`${utilityButtonClasses} disabled:opacity-40`}
+              onClick={() => setFiltersCollapsed(prev => !prev)}
+              className={`${utilityButtonClasses} text-left bg-white/10 hover:bg-white/20`}
+              aria-pressed={!filtersCollapsed}
             >
-              Prev
+              {filtersCollapsed ? 'Show filters' : 'Hide filters'}
             </button>
-            <span className="text-[0.6rem]">
-              {pageIndex}/{totalPages}
-            </span>
-            <button
-              onClick={goToNextPage}
-              disabled={pageIndex === totalPages}
-              className={`${utilityButtonClasses} disabled:opacity-40`}
-            >
-              Next
-            </button>
+            {selectedCount > 0 && (
+              <div className="flex flex-col gap-1 text-[0.6rem] text-white">
+                <span>{selectedCount} selected</span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => selectAllOnPage(pageImages)}
+                    className={`${utilityButtonClasses} border border-white/20`}
+                  >
+                    Select page
+                  </button>
+                  <button
+                    onClick={openBulkEditModal}
+                    className={`${utilityButtonClasses} bg-blue-600 hover:bg-blue-500`}
+                  >
+                    Bulk edit
+                  </button>
+                  <button
+                    onClick={clearSelection}
+                    className={`${utilityButtonClasses} border border-white/20`}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-[0.6rem] text-gray-200">
+              <button
+                onClick={goToPreviousPage}
+                disabled={pageIndex === 1}
+                className={`${utilityButtonClasses} disabled:opacity-40`}
+              >
+                Prev
+              </button>
+              <span className="text-[0.6rem]">
+                {pageIndex}/{totalPages}
+              </span>
+              <button
+                onClick={goToNextPage}
+                disabled={pageIndex === totalPages}
+                className={`${utilityButtonClasses} disabled:opacity-40`}
+              >
+                Next
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 text-[0.6rem] text-gray-200">
+              <button
+                onClick={scrollGalleryToTop}
+                className={`${utilityButtonClasses} text-left`}
+              >
+                Scroll top
+              </button>
+              <button
+                onClick={scrollToUploader}
+                className={`${utilityButtonClasses} text-left`}
+              >
+                Go to uploader
+              </button>
+            </div>
           </div>
+        ) : (
           <button
-            onClick={scrollGalleryToTop}
-            className={utilityButtonClasses}
+            onClick={() => setUtilityExpanded(true)}
+            className="pointer-events-auto flex items-center gap-2 bg-gray-900/90 text-white border border-gray-700 rounded-full shadow-lg px-3 py-2 text-[0.65rem] font-mono uppercase tracking-wide hover:bg-gray-800"
+            aria-label="Expand utility bar"
           >
-            Scroll top
+            Utility
           </button>
-          <button
-            onClick={scrollToUploader}
-            className={utilityButtonClasses}
-          >
-            Go to uploader
-          </button>
-        </div>
+        )}
       </div>
 
       {!hasResults ? (

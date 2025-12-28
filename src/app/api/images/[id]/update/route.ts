@@ -21,7 +21,7 @@ export async function PATCH(
 
     const { id: imageId } = await params;
     const body = await request.json();
-    const { folder, tags, description, originalUrl, parentId, displayName } = body;
+    const { folder, tags, description, originalUrl, parentId, displayName, altTag } = body;
     
     if (!imageId) {
       return NextResponse.json(
@@ -35,11 +35,18 @@ export async function PATCH(
     const descriptionProvided = Object.prototype.hasOwnProperty.call(body, 'description');
     const originalUrlProvided = Object.prototype.hasOwnProperty.call(body, 'originalUrl');
     const displayNameProvided = Object.prototype.hasOwnProperty.call(body, 'displayName');
+    const altTagProvided = Object.prototype.hasOwnProperty.call(body, 'altTag');
 
     const cleanFolder = cleanString(typeof folder === 'string' ? folder : undefined);
-    const cleanDescription = cleanString(typeof description === 'string' ? description : undefined);
+    const cleanDescription =
+      typeof description === 'string'
+        ? cleanString(description)
+        : description === null
+          ? ''
+          : undefined;
     const cleanOriginalUrl = cleanString(typeof originalUrl === 'string' ? originalUrl : undefined);
     const cleanDisplayName = cleanString(typeof displayName === 'string' ? displayName : undefined);
+    const cleanAltTag = cleanString(typeof altTag === 'string' ? altTag : undefined);
     const cleanTags = (() => {
       if (Array.isArray(tags)) {
         return tags
@@ -92,7 +99,7 @@ export async function PATCH(
     }
 
     if (descriptionProvided) {
-      metadata.description = cleanDescription;
+      metadata.description = cleanDescription ?? '';
     }
 
     if (originalUrlProvided) {
@@ -106,6 +113,10 @@ export async function PATCH(
 
     if (parentProvided) {
       metadata.variationParentId = cleanParentId;
+    }
+
+    if (altTagProvided) {
+      metadata.altTag = cleanAltTag ?? '';
     }
 
     // Update image metadata in Cloudflare using JSON body
@@ -139,6 +150,7 @@ export async function PATCH(
     const finalOriginalUrl = metadata.originalUrl as string | undefined;
     const finalDisplayName =
       (metadata.displayName as string | undefined) ?? fetchedImageResult.result.filename;
+    const finalAltTag = metadata.altTag as string | undefined;
 
     upsertCachedImage(
       transformApiImageToCached({
@@ -158,6 +170,7 @@ export async function PATCH(
       originalUrl: finalOriginalUrl,
       displayName: finalDisplayName,
       parentId: finalParentId,
+      altTag: finalAltTag,
     });
 
   } catch (error) {

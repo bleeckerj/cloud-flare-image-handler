@@ -8,6 +8,7 @@ export interface GalleryImage {
   altTag?: string;
   parentId?: string;
   originalUrl?: string;
+  originalUrlNormalized?: string;
 }
 
 export interface GalleryFilterOptions {
@@ -31,21 +32,34 @@ const matchesTagFilter = (image: GalleryImage, selectedTag: string) => {
   return Array.isArray(image.tags) && image.tags.includes(selectedTag);
 };
 
+const stripQuery = (value: string) => value.split('?')[0];
+
 const matchesSearchFilter = (image: GalleryImage, searchTerm: string) => {
   const normalizedSearch = normalize(searchTerm.trim());
+  const normalizedSearchNoQuery = normalizedSearch ? stripQuery(normalizedSearch) : '';
   if (!normalizedSearch) return true;
 
-  const haystacks = [
+  const baseHaystacks = [
     normalize(image.id),
     normalize(image.filename),
     normalize(image.folder),
     normalize(image.altTag),
     normalize(image.originalUrl),
+    normalize(image.originalUrlNormalized),
     ...(image.tags?.map(normalize) ?? []),
     ...(image.variants?.map(normalize) ?? [])
-  ];
+  ].filter(Boolean);
 
-  return haystacks.some((candidate) => candidate.includes(normalizedSearch));
+  const haystacks = new Set<string>();
+  baseHaystacks.forEach((value) => {
+    haystacks.add(value);
+    haystacks.add(stripQuery(value));
+  });
+
+  return Array.from(haystacks).some(
+    (candidate) =>
+      candidate.includes(normalizedSearch) || (normalizedSearchNoQuery && candidate.includes(normalizedSearchNoQuery))
+  );
 };
 
 const matchesHiddenFolderFilter = (image: GalleryImage, hiddenFolders?: string[]) => {

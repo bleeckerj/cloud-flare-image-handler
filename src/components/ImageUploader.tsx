@@ -22,6 +22,11 @@ interface ImageUploaderProps {
   onImageUploaded?: () => void;
 }
 
+interface QueuedFile {
+  file: File;
+  originalUrl?: string;
+}
+
 interface GalleryImageSummary {
   id: string;
   folder?: string | null;
@@ -78,7 +83,7 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
     "social-media",
     "blog-posts",
   ]);
-  const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const [queuedFiles, setQueuedFiles] = useState<QueuedFile[]>([]);
   const [selectedParentId, setSelectedParentId] = useState<string>('');
   const [parentOptions, setParentOptions] = useState<GalleryImageSummary[]>([]);
   const [importUrl, setImportUrl] = useState('');
@@ -106,12 +111,17 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
     return 'Upload failed';
   }, []);
 
+  const sortedFolders = useMemo(
+    () => [...folders].sort((a, b) => a.localeCompare(b)),
+    [folders]
+  );
+
   const folderSelectOptions = useMemo(
     () => [
       { value: '', label: 'No folder' },
-      ...folders.map((folder) => ({ value: folder, label: folder }))
+      ...sortedFolders.map((folder) => ({ value: folder, label: folder }))
     ],
-    [folders]
+    [sortedFolders]
   );
 
   const canonicalSelectOptions = useMemo(() => {
@@ -163,11 +173,28 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
 
   // Function to actually upload files
   const uploadFiles = useCallback(
-    async (filesToUpload: File[]) => {
+    async (filesToUpload: QueuedFile[]) => {
       setIsUploading(true);
 
+      const resolveFolder = () => {
+        if (selectedFolder && selectedFolder.trim()) {
+          return selectedFolder.trim();
+        }
+        if (newFolder && newFolder.trim()) {
+          const normalized = newFolder.trim().toLowerCase().replace(/\s+/g, "-");
+          if (!folders.includes(normalized)) {
+            setFolders((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+          }
+          setSelectedFolder(normalized);
+          return normalized;
+        }
+        return "";
+      };
+
+      const folderToUse = resolveFolder();
+
       // Create initial entries for all files
-      const initialImages: UploadedImage[] = filesToUpload.map((file) => ({
+      const initialImages: UploadedImage[] = filesToUpload.map(({ file }) => ({
         id: Math.random().toString(36).substring(7),
         url: "",
         filename: file.name,
@@ -178,14 +205,15 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
 
       // Upload each file
       for (let i = 0; i < filesToUpload.length; i++) {
-        const file = filesToUpload[i];
+        const { file, originalUrl: queuedOriginalUrl } = filesToUpload[i];
         const imageId = initialImages[i].id;
+        const originalUrlToSend = queuedOriginalUrl ?? (originalUrl.trim() || '');
 
         try {
           const formData = new FormData();
           formData.append("file", file);
-          if (selectedFolder && selectedFolder.trim()) {
-            formData.append("folder", selectedFolder.trim());
+          if (folderToUse) {
+            formData.append("folder", folderToUse);
           }
           if (tags && tags.trim()) {
             formData.append("tags", tags.trim());
@@ -193,8 +221,8 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
           if (description && description.trim()) {
             formData.append("description", description.trim());
           }
-          if (originalUrl && originalUrl.trim()) {
-            formData.append("originalUrl", originalUrl.trim());
+          if (originalUrlToSend) {
+            formData.append("originalUrl", originalUrlToSend);
           }
           if (selectedParentId) {
             formData.append("parentId", selectedParentId);
@@ -215,13 +243,13 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
                       ...img,
                       status: "success",
                       url: result.url,
-                      folder: selectedFolder,
+                      folder: folderToUse || undefined,
                       tags: tags
                         .trim()
                         ? tags.trim().split(",").map((t) => t.trim())
                         : [],
                       description: description || undefined,
-                      originalUrl: originalUrl || undefined,
+                      originalUrl: originalUrlToSend || undefined,
                     }
                   : img
               )
@@ -272,22 +300,28 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
       setOriginalUrl("");
       setSelectedParentId("");
     },
-    [selectedFolder, tags, description, originalUrl, selectedParentId, onImageUploaded, fetchFolders, formatUploadErrorMessage]
+    [selectedFolder, newFolder, folders, tags, description, originalUrl, selectedParentId, onImageUploaded, fetchFolders, formatUploadErrorMessage]
   );
 
   // Handle drag and drop - either queue or upload immediately
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const resizedPromises = acceptedFiles.map(async (file) => await shrinkImageFile(file));
     const resizedFiles = await Promise.all(resizedPromises);
-    setQueuedFiles((prev) => [...prev, ...resizedFiles]);
+    setQueuedFiles((prev) => [
+      ...prev,
+      ...resizedFiles.map((file) => ({ file }))
+    ]);
   }, []);
 
   // Manual upload button handler
   const handleManualUpload = async () => {
     if (queuedFiles.length > 0) {
-      const processed: File[] = [];
-      for (const file of queuedFiles) {
-        processed.push(await shrinkImageFile(file));
+      const processed: QueuedFile[] = [];
+      for (const item of queuedFiles) {
+        processed.push({
+          file: await shrinkImageFile(item.file),
+          originalUrl: item.originalUrl
+        });
       }
       uploadFiles(processed);
       setQueuedFiles([]); // Clear the queue
@@ -364,9 +398,10 @@ export default function ImageUploader({ onImageUploaded }: ImageUploaderProps) {
         throw new Error('Invalid response from import service');
       }
       const file = base64ToFile(String(data.data), String(data.name), String(data.type));
-      setQueuedFiles((prev) => [...prev, file]);
+      const sourceUrl = String(data.originalUrl || importUrl.trim());
+      setQueuedFiles((prev) => [...prev, { file, originalUrl: sourceUrl }]);
       if (!originalUrl.trim()) {
-        setOriginalUrl(String(data.originalUrl || importUrl.trim()));
+        setOriginalUrl(sourceUrl);
       }
       setImportUrl('');
     } catch (err) {
@@ -559,10 +594,13 @@ A long list of filenames is not user friendly and essentially useless for select
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {queuedFiles.map((file, index) => (
-              <div key={`${file.name}-${index}`} className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-xs font-mono font-medium text-gray-900 truncate">{file.name}</p>
-                <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+            {queuedFiles.map((item, index) => (
+              <div key={`${item.file.name}-${index}`} className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs font-mono font-medium text-gray-900 truncate">{item.file.name}</p>
+                <p className="text-xs text-gray-500">{(item.file.size / 1024 / 1024).toFixed(2)} MB</p>
+                {item.originalUrl && (
+                  <p className="text-[11px] text-gray-600 truncate" title={item.originalUrl}>🔗 {item.originalUrl}</p>
+                )}
                 <button onClick={() => setQueuedFiles((prev) => prev.filter((_, i) => i !== index))} className="mt-1 text-xs text-red-600 hover:text-red-800" disabled={isUploading}>
                   Remove
                 </button>

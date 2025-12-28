@@ -68,6 +68,8 @@ export default function ImageDetailPage() {
   const [childUploadLoading, setChildUploadLoading] = useState(false);
   const [adoptFolderFilter, setAdoptFolderFilter] = useState('');
   const [altLoadingMap, setAltLoadingMap] = useState<Record<string, boolean>>({});
+  const [bulkDescriptionApplying, setBulkDescriptionApplying] = useState(false);
+  const [bulkAltApplying, setBulkAltApplying] = useState(false);
   const [variationPage, setVariationPage] = useState(1);
   const [adoptPage, setAdoptPage] = useState(1);
   const VARIATION_PAGE_SIZE = 12;
@@ -294,7 +296,45 @@ export default function ImageDetailPage() {
     [previewRotation]
   );
 
+  const metadataByteSize = useMemo(() => {
+    const finalFolder =
+      folderSelect === '__create__'
+        ? newFolderInput.trim() || undefined
+        : folderSelect?.trim() || undefined;
+    const finalTags = tagsInput
+      ? tagsInput
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : [];
+    const payload: Record<string, unknown> = {
+      folder: finalFolder,
+      tags: finalTags,
+      description: descriptionInput ?? '',
+      originalUrl: originalUrlInput || undefined,
+      displayName: displayNameInput || undefined,
+      altTag: altTextInput ?? ''
+    };
+    const compact = Object.fromEntries(
+      Object.entries(payload).filter(([, value]) => value !== undefined)
+    );
+    try {
+      return new TextEncoder().encode(JSON.stringify(compact)).length;
+    } catch {
+      return 0;
+    }
+  }, [
+    altTextInput,
+    descriptionInput,
+    displayNameInput,
+    folderSelect,
+    newFolderInput,
+    originalUrlInput,
+    tagsInput
+  ]);
+
   const isChildImage = Boolean(image?.parentId);
+  const hasVariations = !isChildImage && variationChildren.length > 0;
   const variationCount = displayedVariations.length;
 
   const detailFolderOptions = useMemo(
@@ -681,6 +721,110 @@ export default function ImageDetailPage() {
     }
   }, [image, descriptionInput, toast]);
 
+  const applyDescriptionToVariations = useCallback(async () => {
+    if (isChildImage) {
+      return;
+    }
+    const trimmed = descriptionInput.trim();
+    if (!trimmed) {
+      toast.push('Add a description first');
+      return;
+    }
+    if (!variationChildren.length) {
+      toast.push('No variations to update');
+      return;
+    }
+    setBulkDescriptionApplying(true);
+    try {
+      const results = await Promise.all(
+        variationChildren.map(async (child) => {
+          try {
+            const res = await fetch(`/api/images/${child.id}/update`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ description: trimmed })
+            });
+            const payload = await res.json().catch(() => ({}));
+            return { ok: res.ok, error: payload?.error, id: child.id };
+          } catch (err) {
+            console.error('Bulk description apply error', err);
+            return { ok: false, error: 'Network error', id: child.id };
+          }
+        })
+      );
+      const failures = results.filter(result => !result.ok);
+      const successCount = results.length - failures.length;
+      if (successCount) {
+        setAllImages(prev =>
+          prev.map(img => (img.parentId === id ? { ...img, description: trimmed } : img))
+        );
+      }
+      if (failures.length) {
+        toast.push(`Updated ${successCount}/${variationChildren.length} variations (some failed)`);
+      } else {
+        toast.push(`Description applied to ${variationChildren.length} variations`);
+      }
+      await refreshImageList();
+    } catch (err) {
+      console.error('Failed to bulk apply description', err);
+      toast.push('Failed to apply description to variations');
+    } finally {
+      setBulkDescriptionApplying(false);
+    }
+  }, [descriptionInput, variationChildren, isChildImage, toast, id, refreshImageList]);
+
+  const applyAltToVariations = useCallback(async () => {
+    if (isChildImage) {
+      return;
+    }
+    const trimmed = altTextInput.trim();
+    if (!trimmed) {
+      toast.push('Add ALT text first');
+      return;
+    }
+    if (!variationChildren.length) {
+      toast.push('No variations to update');
+      return;
+    }
+    setBulkAltApplying(true);
+    try {
+      const results = await Promise.all(
+        variationChildren.map(async (child) => {
+          try {
+            const res = await fetch(`/api/images/${child.id}/update`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ altTag: trimmed })
+            });
+            const payload = await res.json().catch(() => ({}));
+            return { ok: res.ok, error: payload?.error, id: child.id };
+          } catch (err) {
+            console.error('Bulk ALT apply error', err);
+            return { ok: false, error: 'Network error', id: child.id };
+          }
+        })
+      );
+      const failures = results.filter(result => !result.ok);
+      const successCount = results.length - failures.length;
+      if (successCount) {
+        setAllImages(prev =>
+          prev.map(img => (img.parentId === id ? { ...img, altTag: trimmed } : img))
+        );
+      }
+      if (failures.length) {
+        toast.push(`Updated ${successCount}/${variationChildren.length} variations (some failed)`);
+      } else {
+        toast.push(`ALT text applied to ${variationChildren.length} variations`);
+      }
+      await refreshImageList();
+    } catch (err) {
+      console.error('Failed to bulk apply ALT text', err);
+      toast.push('Failed to apply ALT text to variations');
+    } finally {
+      setBulkAltApplying(false);
+    }
+  }, [altTextInput, variationChildren, isChildImage, toast, id, refreshImageList]);
+
   if (!id) {
     return (
       <div className="p-6">
@@ -800,17 +944,33 @@ export default function ImageDetailPage() {
           </div>
 
           <div id="image-metadata-section" className="space-y-4">
+            <div className="flex justify-end">
+              <span className="text-[11px] font-mono text-gray-700 bg-gray-100 border border-gray-200 rounded-full px-3 py-1">
+                Metadata: {metadataByteSize} bytes
+              </span>
+            </div>
             <div id="description-section">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs font-mono font-medum text-gray-700">Description</p>
-                <button
-                  onClick={generateDescription}
-                  disabled={descriptionGenerating}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {descriptionGenerating ? 'Generating…' : 'Generate description'}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={generateDescription}
+                    disabled={descriptionGenerating}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {descriptionGenerating ? 'Generating…' : 'Generate description'}
+                  </button>
+                  {hasVariations && (
+                    <button
+                      onClick={applyDescriptionToVariations}
+                      disabled={bulkDescriptionApplying || !descriptionInput.trim()}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
+                    >
+                      {bulkDescriptionApplying ? 'Applying…' : 'Apply to variations'}
+                    </button>
+                  )}
+                </div>
               </div>
               <textarea
                 value={descriptionInput}
@@ -822,19 +982,30 @@ export default function ImageDetailPage() {
             </div>
 
             <div id="alt-text-section">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-mono font-medum text-gray-700">Alt text</p>
                   <p className="text-[10px] text-gray-500">Used by screen readers and assistive tech.</p>
                 </div>
-                <button
-                  onClick={() => generateAltTag(image.id)}
-                  disabled={Boolean(altLoadingMap[image.id])}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {altLoadingMap[image.id] ? 'Generating…' : image.altTag ? 'Refresh ALT text' : 'Generate ALT text'}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => generateAltTag(image.id)}
+                    disabled={Boolean(altLoadingMap[image.id])}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {altLoadingMap[image.id] ? 'Generating…' : image.altTag ? 'Refresh ALT text' : 'Generate ALT text'}
+                  </button>
+                  {hasVariations && (
+                    <button
+                      onClick={applyAltToVariations}
+                      disabled={bulkAltApplying || !altTextInput.trim()}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-200 text-gray-700 hover:border-gray-300 disabled:opacity-50"
+                    >
+                      {bulkAltApplying ? 'Applying…' : 'Apply to variations'}
+                    </button>
+                  )}
+                </div>
               </div>
               <textarea
                 value={altTextInput}
@@ -1313,6 +1484,7 @@ export default function ImageDetailPage() {
               setNewFolderInput('');
               setTagsInput(image.tags ? image.tags.join(', ') : '');
               setDescriptionInput(image.description || '');
+              setAltTextInput(image.altTag || '');
               setOriginalUrlInput(image.originalUrl || '');
               setDisplayNameInput(image.displayName || image.filename || '');
             }}
@@ -1337,9 +1509,10 @@ export default function ImageDetailPage() {
                 const payload = {
                   folder: finalFolder,
                   tags: tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
-                  description: descriptionInput || undefined,
+                  description: descriptionInput,
                   originalUrl: originalUrlInput || undefined,
                   displayName: displayNameInput || undefined,
+                  altTag: altTextInput || undefined,
                 };
                 const res = await fetch(`/api/images/${id}/update`, {
                   method: 'PATCH',
@@ -1349,7 +1522,7 @@ export default function ImageDetailPage() {
                 const body = await res.json() as CloudflareImage;
                 if (res.ok) {
                   toast.push('Metadata updated');
-                  setImage(prev => prev ? ({ ...prev, folder: body.folder, tags: body.tags, description: body.description, originalUrl: body.originalUrl, displayName: body.displayName }) : prev);
+                  setImage(prev => prev ? ({ ...prev, folder: body.folder, tags: body.tags, description: body.description, originalUrl: body.originalUrl, displayName: body.displayName, altTag: body.altTag }) : prev);
                   await refreshImageList();
                 } else {
                   toast.push(body.error || 'Failed to update metadata');
