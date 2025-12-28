@@ -10,6 +10,7 @@ import FolderManagerButton from '@/components/FolderManagerButton';
 import MonoSelect from '@/components/MonoSelect';
 import { useDropzone } from 'react-dropzone';
 import { downloadImageToFile, formatDownloadFileName } from '@/utils/downloadUtils';
+import { useImageAspectRatio } from '@/hooks/useImageAspectRatio';
 
 import { useParams } from 'next/navigation';
 
@@ -393,6 +394,85 @@ export default function ImageDetailPage() {
       console.error('Failed to copy', err);
       prompt('Copy this text manually:', text);
     }
+  };
+
+  const formatCopyPayload = (url: string, altText?: string, includeAlt?: boolean) => {
+    if (!includeAlt) {
+      return url;
+    }
+    return `url: ${JSON.stringify(url)}\nalt: ${JSON.stringify(altText ?? '')}`;
+  };
+
+  const handleCopyUrl = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    url: string,
+    label?: string,
+    altText?: string,
+    successMessage?: string
+  ) => {
+    const payload = formatCopyPayload(url, altText, event.shiftKey);
+    await copyToClipboard(payload, label, successMessage);
+  };
+
+  const getOrientationIcon = (aspectRatioString: string) => {
+    const parts = aspectRatioString.split(':');
+    if (parts.length === 2) {
+      const width = parseFloat(parts[0]);
+      const height = parseFloat(parts[1]);
+      const ratio = width / height;
+      
+      if (Math.abs(ratio - 1) < 0.1) {
+        return (
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className="inline-block">
+            <rect x="1" y="1" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="0.8"/>
+          </svg>
+        );
+      } else if (ratio > 1) {
+        return (
+          <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor" className="inline-block">
+            <rect x="1" y="1" width="8" height="4" fill="none" stroke="currentColor" strokeWidth="0.8"/>
+          </svg>
+        );
+      } else {
+        return (
+          <svg width="6" height="10" viewBox="0 0 6 10" fill="currentColor" className="inline-block">
+            <rect x="1" y="1" width="4" height="8" fill="none" stroke="currentColor" strokeWidth="0.8"/>
+          </svg>
+        );
+      }
+    }
+    
+    return (
+      <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className="inline-block">
+        <rect x="1" y="1" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="0.8"/>
+      </svg>
+    );
+  };
+
+  const AspectRatioDisplay: React.FC<{ imageId: string; className?: string }> = ({ imageId, className }) => {
+    const { aspectRatio, loading, error } = useImageAspectRatio(imageId, Boolean(imageId));
+
+    if (!imageId) {
+      return null;
+    }
+
+    if (loading) {
+      return (
+        <p className={`text-[11px] font-mono text-gray-400 ${className ?? ''}`}>
+          📐 <span className="inline-block w-8 h-2 bg-gray-200 rounded animate-pulse"></span>
+        </p>
+      );
+    }
+
+    if (error || !aspectRatio) {
+      return <p className={`text-[11px] font-mono text-gray-400 ${className ?? ''}`}>📐 --</p>;
+    }
+
+    return (
+      <p className={`text-[11px] font-mono text-gray-500 flex items-center gap-1 ${className ?? ''}`}>
+        📐 {aspectRatio} {getOrientationIcon(aspectRatio)}
+      </p>
+    );
   };
 
   const adjustRotationPreview = useCallback((delta: number) => {
@@ -941,6 +1021,7 @@ export default function ImageDetailPage() {
             <p className="text-xs text-gray-500 mt-1">
               Uploaded {new Date(image.uploaded).toLocaleString()}
             </p>
+            <AspectRatioDisplay imageId={image.id} />
           </div>
 
           <div id="image-metadata-section" className="space-y-4">
@@ -1126,7 +1207,7 @@ export default function ImageDetailPage() {
                     <div className="flex items-center gap-2">
                       <a href={url} target="_blank" rel="noreferrer" className="text-xs text-blue-600">Open</a>
                       <button
-                        onClick={async () => { await copyToClipboard(url, String(variant)); }}
+                        onClick={async (event) => { await handleCopyUrl(event, url, String(variant), image.altTag); }}
                         className="px-2 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-xs font-medium cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
                       >
                         Copy
@@ -1279,6 +1360,7 @@ export default function ImageDetailPage() {
                           <p className="text-xs text-gray-500">
                             Uploaded {new Date(child.uploaded).toLocaleDateString()}
                           </p>
+                          <AspectRatioDisplay imageId={child.id} />
                           <button
                             onClick={() => setVariantModalState({ target: child })}
                             className="inline-flex items-center gap-1 text-xs text-blue-600 underline"
@@ -1288,7 +1370,7 @@ export default function ImageDetailPage() {
                         </div>
                         <div className="flex flex-col gap-2 items-end">
                           <button
-                            onClick={async () => await copyToClipboard(getCloudflareImageUrl(child.id, 'original'), 'Variation')}
+                            onClick={async (event) => await handleCopyUrl(event, getCloudflareImageUrl(child.id, 'original'), 'Variation', child.altTag)}
                             className="text-xs text-blue-600 hover:underline"
                           >
                             Copy URL
@@ -1553,8 +1635,12 @@ export default function ImageDetailPage() {
           getMultipleImageUrls(target.id, ['thumbnail','small','medium','large','xlarge','original'])
         ).map(([variantName, variantUrl]) => [variantName, ensureWebpFormat(variantUrl)] as [string, string]);
 
-        const handleCopyVariantList = async (variant: string, url: string) => {
-          await copyToClipboard(ensureWebpFormat(url), `${variant} variant`);
+        const handleCopyVariantList = async (
+          event: React.MouseEvent<HTMLButtonElement>,
+          variant: string,
+          url: string
+        ) => {
+          await handleCopyUrl(event, ensureWebpFormat(url), `${variant} variant`, target.altTag);
           setVariantModalState(null);
         };
 
@@ -1586,8 +1672,8 @@ export default function ImageDetailPage() {
                     </div>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={async () => {
-                          await handleCopyVariantList(variant, String(url));
+                        onClick={async (event) => {
+                          await handleCopyVariantList(event, variant, String(url));
                         }}
                         className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-xs font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
                       >
