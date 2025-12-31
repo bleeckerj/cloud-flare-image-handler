@@ -8,6 +8,8 @@ import { useToast } from '@/components/Toast';
 import { Sparkles, RotateCcw, RotateCw } from 'lucide-react';
 import FolderManagerButton from '@/components/FolderManagerButton';
 import MonoSelect from '@/components/MonoSelect';
+import { cleanString, pickCloudflareMetadata } from '@/utils/cloudflareMetadata';
+import { normalizeOriginalUrl } from '@/utils/urlNormalization';
 import { useDropzone } from 'react-dropzone';
 import { downloadImageToFile, formatDownloadFileName } from '@/utils/downloadUtils';
 import { useImageAspectRatio } from '@/hooks/useImageAspectRatio';
@@ -26,6 +28,7 @@ interface CloudflareImage {
   originalUrlNormalized?: string;
   contentHash?: string;
   altTag?: string;
+  exif?: Record<string, string | number>;
   parentId?: string;
   linkedAssetId?: string;
 }
@@ -308,17 +311,38 @@ export default function ImageDetailPage() {
           .map((t) => t.trim())
           .filter(Boolean)
       : [];
-    const payload: Record<string, unknown> = {
-      folder: finalFolder,
-      tags: finalTags,
-      description: descriptionInput ?? '',
-      originalUrl: originalUrlInput || undefined,
-      displayName: displayNameInput || undefined,
-      altTag: altTextInput ?? ''
+    const cleanDescription =
+      typeof descriptionInput === 'string' ? cleanString(descriptionInput) : undefined;
+    const baseMetadata: Record<string, unknown> = {
+      folder: image?.folder,
+      tags: image?.tags ?? [],
+      description: image?.description ?? '',
+      originalUrl: image?.originalUrl,
+      originalUrlNormalized: image?.originalUrlNormalized,
+      contentHash: image?.contentHash,
+      altTag: image?.altTag ?? '',
+      displayName: image?.displayName ?? image?.filename,
+      exif: image?.exif,
+      variationParentId: image?.parentId,
+      linkedAssetId: image?.linkedAssetId,
+      updatedAt: new Date().toISOString()
     };
-    const compact = Object.fromEntries(
-      Object.entries(payload).filter(([, value]) => value !== undefined)
-    );
+    const metadata: Record<string, unknown> = { ...baseMetadata };
+    if (finalFolder !== undefined) {
+      metadata.folder = cleanString(finalFolder);
+    }
+    metadata.tags = finalTags
+      .map((tag) => cleanString(tag))
+      .filter((tag): tag is string => Boolean(tag));
+    metadata.description = cleanDescription ?? '';
+    const cleanedOriginalUrl = cleanString(originalUrlInput);
+    metadata.originalUrl = cleanedOriginalUrl ?? '';
+    metadata.originalUrlNormalized = normalizeOriginalUrl(cleanedOriginalUrl) ?? '';
+    const cleanedDisplayName = cleanString(displayNameInput);
+    metadata.displayName = cleanedDisplayName ?? '';
+    const cleanAltTag = cleanString(altTextInput) ?? '';
+    metadata.altTag = cleanAltTag;
+    const compact = pickCloudflareMetadata(metadata);
     try {
       return new TextEncoder().encode(JSON.stringify(compact)).length;
     } catch {
@@ -329,10 +353,21 @@ export default function ImageDetailPage() {
     descriptionInput,
     displayNameInput,
     folderSelect,
+    image,
     newFolderInput,
     originalUrlInput,
     tagsInput
   ]);
+
+  const exifEntries = useMemo(() => {
+    const exif = image?.exif;
+    if (!exif || typeof exif !== 'object') {
+      return [];
+    }
+    return Object.entries(exif)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => [key, String(value)] as [string, string]);
+  }, [image?.exif]);
 
   const isChildImage = Boolean(image?.parentId);
   const hasVariations = !isChildImage && variationChildren.length > 0;
@@ -400,7 +435,7 @@ export default function ImageDetailPage() {
     if (!includeAlt) {
       return url;
     }
-    return `url: ${JSON.stringify(url)}\nalt: ${JSON.stringify(altText ?? '')}`;
+    return `url: ${JSON.stringify(url)},\naltText: ${JSON.stringify(altText ?? '')}`;
   };
 
   const handleCopyUrl = async (
@@ -844,14 +879,13 @@ export default function ImageDetailPage() {
       } else {
         toast.push(`Description applied to ${variationChildren.length} variations`);
       }
-      await refreshImageList();
     } catch (err) {
       console.error('Failed to bulk apply description', err);
       toast.push('Failed to apply description to variations');
     } finally {
       setBulkDescriptionApplying(false);
     }
-  }, [descriptionInput, variationChildren, isChildImage, toast, id, refreshImageList]);
+  }, [descriptionInput, variationChildren, isChildImage, toast, id]);
 
   const applyAltToVariations = useCallback(async () => {
     if (isChildImage) {
@@ -896,14 +930,13 @@ export default function ImageDetailPage() {
       } else {
         toast.push(`ALT text applied to ${variationChildren.length} variations`);
       }
-      await refreshImageList();
     } catch (err) {
       console.error('Failed to bulk apply ALT text', err);
       toast.push('Failed to apply ALT text to variations');
     } finally {
       setBulkAltApplying(false);
     }
-  }, [altTextInput, variationChildren, isChildImage, toast, id, refreshImageList]);
+  }, [altTextInput, variationChildren, isChildImage, toast, id]);
 
   if (!id) {
     return (
@@ -1195,6 +1228,23 @@ export default function ImageDetailPage() {
               </div>
             </div>
 
+            {exifEntries.length > 0 && (
+              <div id="exif-section">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-mono font-medum text-gray-700">EXIF</p>
+                  <p className="text-[10px] text-gray-500">{exifEntries.length} fields</p>
+                </div>
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {exifEntries.map(([key, value]) => (
+                    <div key={key} className="flex items-start justify-between gap-3 border rounded px-2 py-1 text-[11px]">
+                      <span className="text-gray-600 font-mono">{key}</span>
+                      <span className="text-gray-900 font-mono break-all text-right">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div id="variant-links-section">
               <p className="text-xs font-mono font-medum text-gray-700">Available variants</p>
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1216,6 +1266,7 @@ export default function ImageDetailPage() {
                   </div>
                 ))}
               </div>
+              <p className="text-[10px] text-gray-500 mt-2">Tip: Shift+Copy adds ALT text.</p>
             </div>
 
             <div className="space-y-4">
@@ -1588,13 +1639,14 @@ export default function ImageDetailPage() {
                 const finalFolder = folderSelect === '__create__'
                   ? (newFolderInput.trim() || undefined)
                   : (folderSelect === '' ? undefined : folderSelect);
+                const cleanedOriginalUrl = cleanString(originalUrlInput);
                 const payload = {
                   folder: finalFolder,
                   tags: tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
                   description: descriptionInput,
-                  originalUrl: originalUrlInput || undefined,
-                  displayName: displayNameInput || undefined,
-                  altTag: altTextInput || undefined,
+                  originalUrl: cleanedOriginalUrl ?? '',
+                  displayName: cleanString(displayNameInput) ?? '',
+                  altTag: cleanString(altTextInput) ?? '',
                 };
                 const res = await fetch(`/api/images/${id}/update`, {
                   method: 'PATCH',
@@ -1698,6 +1750,7 @@ export default function ImageDetailPage() {
                   </div>
                 ))}
               </div>
+              <div className="px-3 pb-3 text-[10px] text-gray-500">Tip: Shift+Copy adds ALT text.</div>
             </div>
           </>
         );

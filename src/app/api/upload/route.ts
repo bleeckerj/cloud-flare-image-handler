@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
 import { findDuplicatesByContentHash, findDuplicatesByOriginalUrl, toDuplicateSummary } from '@/server/duplicateDetector';
 import { normalizeOriginalUrl } from '@/utils/urlNormalization';
+import { extractExifSummary } from '@/utils/exif';
 
 const logIssue = (message: string, details?: Record<string, unknown>) => {
   console.warn('[upload] ' + message, details);
@@ -92,7 +93,8 @@ export async function POST(request: NextRequest) {
 
     // Convert file to buffer and shrink if necessary
     const bytes = await file.arrayBuffer();
-    let buffer = Buffer.from(bytes);
+    const originalBuffer = Buffer.from(bytes);
+    let buffer = originalBuffer;
 
     const shrinkIfNeeded = async (input: Buffer, type: string): Promise<Buffer> => {
       if (input.byteLength <= maxSize) {
@@ -116,6 +118,7 @@ export async function POST(request: NextRequest) {
 
     buffer = await shrinkIfNeeded(buffer, file.type);
     const contentHash = computeContentHash(buffer);
+    const exifSummary = await extractExifSummary(originalBuffer);
 
     if (!normalizedOriginalUrl) {
       duplicateMatches = await findDuplicatesByContentHash(contentHash);
@@ -153,6 +156,7 @@ export async function POST(request: NextRequest) {
       originalUrlNormalized: normalizedOriginalUrl,
       contentHash,
       variationParentId: cleanParentId,
+      exif: exifSummary,
     };
 
     const metadata = JSON.stringify(metadataPayload);

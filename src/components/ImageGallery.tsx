@@ -42,6 +42,21 @@ export interface ImageGalleryRef {
 
 const PAGE_SIZE = 30;
 const HIDDEN_FOLDERS_STORAGE_KEY = 'galleryHiddenFolders';
+const BROKEN_AUDIT_STORAGE_KEY = 'galleryBrokenAudit';
+const AUDIT_LOG_LIMIT = 200;
+
+type BrokenAudit = {
+  checkedAt?: string;
+  ids: string[];
+};
+
+type AuditLogEntry = {
+  id: string;
+  filename?: string;
+  status?: number;
+  reason?: string;
+  url?: string;
+};
 
 const loadHiddenFoldersFromStorage = (): string[] => {
   if (typeof window === 'undefined') {
@@ -76,6 +91,39 @@ const persistHiddenFolders = (folders: string[]) => {
   }
 };
 
+const loadBrokenAuditFromStorage = (): BrokenAudit => {
+  if (typeof window === 'undefined') {
+    return { ids: [] };
+  }
+  try {
+    const storedValue = window.localStorage.getItem(BROKEN_AUDIT_STORAGE_KEY);
+    if (!storedValue) {
+      return { ids: [] };
+    }
+    const parsed = JSON.parse(storedValue) as BrokenAudit;
+    if (parsed && Array.isArray(parsed.ids)) {
+      return {
+        checkedAt: typeof parsed.checkedAt === 'string' ? parsed.checkedAt : undefined,
+        ids: parsed.ids.filter((item): item is string => typeof item === 'string')
+      };
+    }
+  } catch (error) {
+    console.warn('Failed to parse broken audit state', error);
+  }
+  return { ids: [] };
+};
+
+const persistBrokenAudit = (audit: BrokenAudit) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(BROKEN_AUDIT_STORAGE_KEY, JSON.stringify(audit));
+  } catch (error) {
+    console.warn('Failed to save broken audit state', error);
+  }
+};
+
 const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTrigger }, ref) => {
   const getStoredPreferences = () => {
     if (typeof window === 'undefined') {
@@ -91,7 +139,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         filtersCollapsed: false,
         bulkFolderInput: '',
         bulkFolderMode: 'existing' as 'existing' | 'new',
-        showDuplicatesOnly: false
+        showDuplicatesOnly: false,
+        showBrokenOnly: false
       };
     }
     try {
@@ -108,6 +157,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           viewMode?: 'grid' | 'list';
           filtersCollapsed?: boolean;
           showDuplicatesOnly?: boolean;
+          showBrokenOnly?: boolean;
         };
         return {
           variant: typeof parsed.variant === 'string' ? parsed.variant : 'public',
@@ -121,7 +171,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           filtersCollapsed: Boolean(parsed.filtersCollapsed),
           bulkFolderInput: typeof parsed.bulkFolderInput === 'string' ? parsed.bulkFolderInput : '',
           bulkFolderMode: parsed.bulkFolderMode === 'new' ? 'new' : 'existing',
-          showDuplicatesOnly: Boolean(parsed.showDuplicatesOnly)
+          showDuplicatesOnly: Boolean(parsed.showDuplicatesOnly),
+          showBrokenOnly: Boolean(parsed.showBrokenOnly)
         };
       }
     } catch (error) {
@@ -139,7 +190,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       filtersCollapsed: false,
       bulkFolderInput: '',
       bulkFolderMode: 'existing',
-      showDuplicatesOnly: false
+      showDuplicatesOnly: false,
+      showBrokenOnly: false
     };
   };
 
@@ -167,9 +219,15 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [bulkTagsInput, setBulkTagsInput] = useState('');
   const [bulkApplyFolder, setBulkApplyFolder] = useState(true);
   const [bulkApplyTags, setBulkApplyTags] = useState(false);
+  const [bulkTagsMode, setBulkTagsMode] = useState<'replace' | 'append'>('replace');
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState<boolean>(storedPreferencesRef.current.showDuplicatesOnly ?? false);
+  const [showBrokenOnly, setShowBrokenOnly] = useState<boolean>(storedPreferencesRef.current.showBrokenOnly ?? false);
+  const [brokenAudit, setBrokenAudit] = useState<BrokenAudit>(() => loadBrokenAuditFromStorage());
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditProgress, setAuditProgress] = useState({ checked: 0, total: 0 });
+  const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([]);
   const utilityButtonClasses = 'text-[0.65rem] font-mono px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 transition';
 
   useEffect(() => {
@@ -187,15 +245,19 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
         filtersCollapsed,
         bulkFolderInput,
         bulkFolderMode,
-        showDuplicatesOnly
+        showDuplicatesOnly,
+        showBrokenOnly
       }));
     } catch (error) {
       console.warn('Failed to save gallery prefs', error);
     }
-  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants, selectedFolder, selectedTag, searchTerm, viewMode, filtersCollapsed, bulkFolderInput, bulkFolderMode, showDuplicatesOnly]);
+  }, [onlyCanonical, respectAspectRatio, selectedVariant, onlyWithVariants, selectedFolder, selectedTag, searchTerm, viewMode, filtersCollapsed, bulkFolderInput, bulkFolderMode, showDuplicatesOnly, showBrokenOnly]);
   useEffect(() => {
     persistHiddenFolders(hiddenFolders);
   }, [hiddenFolders]);
+  useEffect(() => {
+    persistBrokenAudit(brokenAudit);
+  }, [brokenAudit]);
   useEffect(() => {
     setSelectedImageIds(prev => {
       if (!prev.size) return prev;
@@ -209,6 +271,19 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       return next;
     });
   }, [images]);
+  useEffect(() => {
+    if (!brokenAudit.ids.length) {
+      return;
+    }
+    const validIds = new Set(images.map(img => img.id));
+    setBrokenAudit(prev => {
+      const filtered = prev.ids.filter(id => validIds.has(id));
+      if (filtered.length === prev.ids.length) {
+        return prev;
+      }
+      return { ...prev, ids: filtered };
+    });
+  }, [images, brokenAudit.ids.length]);
   useEffect(() => {
     if (
       selectedFolder !== 'all' &&
@@ -385,6 +460,67 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   };
 
   const toast = useToast();
+  const brokenImageIds = useMemo(() => new Set(brokenAudit.ids), [brokenAudit.ids]);
+
+  const runBrokenAudit = useCallback(async () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    setAuditLoading(true);
+    setAuditEntries([]);
+    setAuditProgress({ checked: 0, total: images.length });
+    try {
+      const chunkSize = 50;
+      const total = images.length;
+      const brokenIds = new Set<string>();
+      let offset = 0;
+      while (offset < total) {
+        const url = new URL('/api/images/audit', window.location.origin);
+        url.searchParams.set('variant', selectedVariant);
+        url.searchParams.set('offset', String(offset));
+        url.searchParams.set('limit', String(chunkSize));
+        url.searchParams.set('verbose', '1');
+        const response = await fetch(url.toString());
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || 'Audit request failed');
+        }
+        const payload = await response.json();
+        const results = Array.isArray(payload.results) ? payload.results : [];
+        const batchBroken = Array.isArray(payload.broken) ? payload.broken : [];
+        batchBroken.forEach((entry: { id?: string }) => {
+          if (entry?.id) {
+            brokenIds.add(entry.id);
+          }
+        });
+        setAuditEntries(prev => {
+          const combined = [...prev, ...results];
+          return combined.length > AUDIT_LOG_LIMIT
+            ? combined.slice(combined.length - AUDIT_LOG_LIMIT)
+            : combined;
+        });
+        const checkedCount = Number.isFinite(payload.checked) ? payload.checked : results.length || chunkSize;
+        const nextChecked = Math.min(total, offset + checkedCount);
+        setAuditProgress({ checked: nextChecked, total });
+        offset += chunkSize;
+      }
+      setBrokenAudit({
+        checkedAt: new Date().toISOString(),
+        ids: Array.from(brokenIds)
+      });
+      toast.push(
+        brokenIds.size
+          ? `Audit complete: ${brokenIds.size} broken URL(s) found`
+          : 'Audit complete: no broken URLs detected'
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Audit failed';
+      console.error('Broken URL audit failed', error);
+      toast.push(message);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [images.length, selectedVariant, toast]);
 
   const copyToClipboard = async (url: string, label?: string) => {
     try {
@@ -416,6 +552,23 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       console.error('Failed to copy: ', err);
       prompt('Copy this URL manually:', url);
     }
+  };
+
+  const formatCopyPayload = (url: string, altText?: string, includeAlt?: boolean) => {
+    if (!includeAlt) {
+      return url;
+    }
+    return `url: ${JSON.stringify(url)},\naltText: ${JSON.stringify(altText ?? '')}`;
+  };
+
+  const handleCopyUrl = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    url: string,
+    label?: string,
+    altText?: string
+  ) => {
+    const payload = formatCopyPayload(url, altText, event.shiftKey);
+    await copyToClipboard(payload, label);
   };
 
   const downloadVariantToFile = async (url: string, filenameHint?: string) => {
@@ -537,8 +690,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     }
     setBulkFolderInput('');
     setBulkTagsInput('');
-    setBulkApplyFolder(true);
-    setBulkApplyTags(false);
+    setBulkApplyFolder(false);
+    setBulkApplyTags(true);
+    setBulkTagsMode('append');
     setBulkEditOpen(true);
   }, [selectedCount, toast]);
 
@@ -551,31 +705,47 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       toast.push('No images selected');
       return;
     }
-    const payload: Record<string, unknown> = {};
-    if (bulkApplyFolder) {
-      if (bulkFolderMode === 'existing') {
-        payload.folder = bulkFolderInput || undefined;
-      } else if (bulkFolderMode === 'new') {
-        payload.folder = bulkFolderInput.trim() || undefined;
-      }
-    }
-    if (bulkApplyTags) {
-      payload.tags = bulkTagsInput;
-    }
-    if (Object.keys(payload).length === 0) {
+    const parsedBulkTags = bulkTagsInput
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(Boolean);
+    const hasTagChanges =
+      bulkApplyTags &&
+      (bulkTagsMode === 'replace' || parsedBulkTags.length > 0);
+    if (!bulkApplyFolder && !hasTagChanges) {
       toast.push('Choose at least one field to update');
       return;
     }
     setBulkUpdating(true);
     try {
       await Promise.all(
-        Array.from(selectedImageIds).map(id =>
-          fetch(`/api/images/${id}/update`, {
+        Array.from(selectedImageIds).map(id => {
+          const payload: Record<string, unknown> = {};
+          if (bulkApplyFolder) {
+            if (bulkFolderMode === 'existing') {
+              payload.folder = bulkFolderInput || undefined;
+            } else if (bulkFolderMode === 'new') {
+              payload.folder = bulkFolderInput.trim() || undefined;
+            }
+          }
+          if (bulkApplyTags) {
+            if (bulkTagsMode === 'replace') {
+              payload.tags = bulkTagsInput;
+            } else if (parsedBulkTags.length > 0) {
+              const target = images.find(img => img.id === id);
+              const existingTags = Array.isArray(target?.tags) ? target.tags : [];
+              const merged = new Map<string, string>();
+              existingTags.forEach(tag => merged.set(tag.toLowerCase(), tag));
+              parsedBulkTags.forEach(tag => merged.set(tag.toLowerCase(), tag));
+              payload.tags = Array.from(merged.values());
+            }
+          }
+          return fetch(`/api/images/${id}/update`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-          })
-        )
+          });
+        })
       );
       setImages(prev =>
         prev.map(img => {
@@ -587,11 +757,17 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             (bulkFolderMode === 'existing'
               ? bulkFolderInput || undefined
               : bulkFolderInput.trim() || undefined);
-          const updatedTags = bulkApplyTags
-            ? bulkTagsInput.trim()
-              ? bulkTagsInput.split(',').map(tag => tag.trim()).filter(Boolean)
-              : []
-            : img.tags;
+          let updatedTags = img.tags;
+          if (bulkApplyTags) {
+            if (bulkTagsMode === 'replace') {
+              updatedTags = parsedBulkTags;
+            } else if (parsedBulkTags.length > 0) {
+              const merged = new Map<string, string>();
+              (img.tags ?? []).forEach(tag => merged.set(tag.toLowerCase(), tag));
+              parsedBulkTags.forEach(tag => merged.set(tag.toLowerCase(), tag));
+              updatedTags = Array.from(merged.values());
+            }
+          }
 
           return {
             ...img,
@@ -615,6 +791,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     bulkApplyTags,
     bulkFolderInput,
     bulkTagsInput,
+    bulkTagsMode,
+    images,
     selectedCount,
     selectedImageIds,
     toast,
@@ -945,17 +1123,24 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       : duplicateFilteredImages;
   }, [duplicateFilteredImages, showDuplicatesOnly]);
 
+  const brokenFilteredImages = useMemo(() => {
+    if (!showBrokenOnly) {
+      return duplicatesSortedByFilename;
+    }
+    return duplicatesSortedByFilename.filter((image) => brokenImageIds.has(image.id));
+  }, [duplicatesSortedByFilename, showBrokenOnly, brokenImageIds]);
+
   const filteredWithVariants = useMemo(() => {
     if (!onlyWithVariants) {
-      return duplicatesSortedByFilename;
+      return brokenFilteredImages;
     }
     const parentIdsWithChildren = new Set(
       Object.entries(childrenMap)
         .filter(([, value]) => (value?.length ?? 0) > 0)
         .map(([key]) => key)
     );
-    return duplicatesSortedByFilename.filter(image => parentIdsWithChildren.has(image.id));
-  }, [duplicatesSortedByFilename, onlyWithVariants, childrenMap]);
+    return brokenFilteredImages.filter(image => parentIdsWithChildren.has(image.id));
+  }, [brokenFilteredImages, onlyWithVariants, childrenMap]);
 
   const sortedImages = useMemo(() => {
     return [...filteredWithVariants].sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
@@ -971,7 +1156,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   useEffect(() => {
     setCurrentPage(1);
     scrollGalleryToTop();
-  }, [selectedFolder, selectedTag, searchTerm, onlyWithVariants, showDuplicatesOnly, scrollGalleryToTop]);
+  }, [selectedFolder, selectedTag, searchTerm, onlyWithVariants, showDuplicatesOnly, showBrokenOnly, scrollGalleryToTop]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1021,6 +1206,10 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
 
   const goToPreviousPage = () => goToPageNumber(pageIndex - 1);
   const goToNextPage = () => goToPageNumber(pageIndex + 1);
+  const goToFirstPage = () => goToPageNumber(1);
+  const goToLastPage = () => goToPageNumber(totalPages);
+  const jumpBackTenPages = () => goToPageNumber(pageIndex - 10);
+  const jumpForwardTenPages = () => goToPageNumber(pageIndex + 10);
 
   const handleBulkFolderSelect = useCallback(
     (value: string) => {
@@ -1076,6 +1265,22 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             {showPagination && (
               <div className="flex items-center gap-2 text-[0.7em] font-mono text-gray-600">
                 <button
+                  onClick={goToFirstPage}
+                  disabled={pageIndex === 1}
+                  className="px-3 py-1 border rounded-md disabled:opacity-40"
+                  title="First page"
+                >
+                  First
+                </button>
+                <button
+                  onClick={jumpBackTenPages}
+                  disabled={pageIndex === 1}
+                  className="px-3 py-1 border rounded-md disabled:opacity-40"
+                  title="Back 10 pages"
+                >
+                  -10
+                </button>
+                <button
                   onClick={goToPreviousPage}
                   disabled={pageIndex === 1}
                   className="px-3 py-1 border rounded-md disabled:opacity-40"
@@ -1093,6 +1298,22 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   title={nextPageRangeLabel ? `Next (${nextPageRangeLabel})` : 'Next page'}
                 >
                   Next
+                </button>
+                <button
+                  onClick={jumpForwardTenPages}
+                  disabled={pageIndex === totalPages}
+                  className="px-3 py-1 border rounded-md disabled:opacity-40"
+                  title="Forward 10 pages"
+                >
+                  +10
+                </button>
+                <button
+                  onClick={goToLastPage}
+                  disabled={pageIndex === totalPages}
+                  className="px-3 py-1 border rounded-md disabled:opacity-40"
+                  title="Last page"
+                >
+                  Last
                 </button>
               </div>
             )}
@@ -1290,7 +1511,71 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               />
               duplicates
             </label>
+            <label htmlFor="broken-filter" className="flex items-center gap-1 font-mono">
+              <input
+                id="broken-filter"
+                type="checkbox"
+                checked={showBrokenOnly}
+                onChange={(e) => setShowBrokenOnly(e.target.checked)}
+                className="h-3 w-3 font-mono text-[0.7em] font-mono text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              broken
+            </label>
           </div>
+          <div className="md:col-span-5 flex flex-wrap items-center gap-3 text-[0.65rem] font-mono text-gray-600">
+            <button
+              onClick={runBrokenAudit}
+              disabled={auditLoading}
+              className="inline-flex items-center gap-2 px-3 py-1 border border-gray-300 rounded-md bg-white hover:bg-gray-100 disabled:opacity-50"
+            >
+              <AlertTriangle className="h-3 w-3" />
+              {auditLoading ? 'Auditing…' : 'Audit broken URLs'}
+            </button>
+            <span>
+              Broken: {brokenAudit.ids.length}
+            </span>
+            {brokenAudit.checkedAt && (
+              <span>
+                Last audit: {new Date(brokenAudit.checkedAt).toLocaleString()}
+              </span>
+            )}
+            {(auditLoading || auditProgress.checked > 0) && (
+              <span>
+                Checked: {auditProgress.checked}/{auditProgress.total}
+              </span>
+            )}
+          </div>
+          {(auditLoading || auditEntries.length > 0) && (
+            <div className="md:col-span-5 rounded-md border border-gray-200 bg-white p-3 text-[0.65rem] font-mono text-gray-700">
+              <div className="flex items-center justify-between">
+                <span>Audit log {auditEntries.length >= AUDIT_LOG_LIMIT ? `(last ${AUDIT_LOG_LIMIT})` : ''}</span>
+                {auditLoading && <span className="text-gray-500">Running…</span>}
+              </div>
+              <div className="mt-2 h-1 w-full rounded-full bg-gray-100">
+                <div
+                  className="h-1 rounded-full bg-blue-500 transition-[width]"
+                  style={{
+                    width: auditProgress.total
+                      ? `${Math.min(100, (auditProgress.checked / auditProgress.total) * 100)}%`
+                      : '0%'
+                  }}
+                />
+              </div>
+              <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                {auditEntries.map((entry) => (
+                  <div key={`${entry.id}-${entry.url ?? ''}-${entry.status ?? ''}`} className="flex items-start justify-between gap-2">
+                    <div className="text-gray-600">
+                      <div>{entry.id}</div>
+                      <div className="text-gray-400">{entry.filename ?? '[no filename]'}</div>
+                    </div>
+                    <span className="text-gray-500">
+                      {entry.status ?? '—'} {entry.reason ?? ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="md:col-span-5">
             <GalleryCommandBar
               hiddenFolders={hiddenFolders}
@@ -1384,6 +1669,20 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             )}
             <div className="flex items-center gap-2 text-[0.6rem] text-gray-200">
               <button
+                onClick={goToFirstPage}
+                disabled={pageIndex === 1}
+                className={`${utilityButtonClasses} disabled:opacity-40`}
+              >
+                First
+              </button>
+              <button
+                onClick={jumpBackTenPages}
+                disabled={pageIndex === 1}
+                className={`${utilityButtonClasses} disabled:opacity-40`}
+              >
+                -10
+              </button>
+              <button
                 onClick={goToPreviousPage}
                 disabled={pageIndex === 1}
                 className={`${utilityButtonClasses} disabled:opacity-40`}
@@ -1399,6 +1698,20 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 className={`${utilityButtonClasses} disabled:opacity-40`}
               >
                 Next
+              </button>
+              <button
+                onClick={jumpForwardTenPages}
+                disabled={pageIndex === totalPages}
+                className={`${utilityButtonClasses} disabled:opacity-40`}
+              >
+                +10
+              </button>
+              <button
+                onClick={goToLastPage}
+                disabled={pageIndex === totalPages}
+                className={`${utilityButtonClasses} disabled:opacity-40`}
+              >
+                Last
               </button>
             </div>
             <div className="flex flex-col gap-2 text-[0.6rem] text-gray-200">
@@ -1810,7 +2123,11 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                     </div>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={(e) => { e.stopPropagation(); copyToClipboard(String(url), variant); setOpenCopyMenu(null); }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await handleCopyUrl(e, String(url), variant, modalImage.altTag);
+                          setOpenCopyMenu(null);
+                        }}
                         className="px-3 py-1 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded text-[0.7em] font-mono font-medium flex-shrink-0 cursor-pointer transition transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300"
                       >
                         Copy
@@ -1829,6 +2146,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                   </div>
                 ))}
               </div>
+              <div className="px-3 pb-3 text-[0.7em] font-mono text-gray-500">Tip: Shift+Copy adds ALT text.</div>
             </div>
           </>
         );
@@ -1968,13 +2286,42 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 Update tags
               </label>
               {bulkApplyTags && (
-                <textarea
-                  value={bulkTagsInput}
-                  onChange={(e) => setBulkTagsInput(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2"
-                  placeholder="Comma-separated tags"
-                  rows={3}
-                />
+                <div className="space-y-2">
+                  <div className="flex items-center gap-4 text-[0.65rem] text-gray-600">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="bulk-tags-mode"
+                        checked={bulkTagsMode === 'replace'}
+                        onChange={() => setBulkTagsMode('replace')}
+                        className="h-3 w-3"
+                      />
+                      Replace
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="bulk-tags-mode"
+                        checked={bulkTagsMode === 'append'}
+                        onChange={() => setBulkTagsMode('append')}
+                        className="h-3 w-3"
+                      />
+                      Append
+                    </label>
+                  </div>
+                  <textarea
+                    value={bulkTagsInput}
+                    onChange={(e) => setBulkTagsInput(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2"
+                    placeholder="Comma-separated tags"
+                    rows={3}
+                  />
+                  <p className="text-[0.6rem] text-gray-500">
+                    {bulkTagsMode === 'replace'
+                      ? 'Replace tags with this list (empty clears tags).'
+                      : 'Append tags to each image (empty keeps existing tags).'}
+                  </p>
+                </div>
               )}
             </div>
             <div className="flex justify-end gap-2">

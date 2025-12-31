@@ -10,10 +10,12 @@
     "test": "vitest run",
     "count:folder": "node scripts/count-folder-images.mjs",
     "refresh:hash-cache": "node scripts/refresh-hash-cache.mjs",
-    "diag:duplicates": "node scripts/diagnose-duplicates.mjs"
+    "diag:duplicates": "node scripts/diagnose-duplicates.mjs",
+    "audit:broken": "node scripts/audit-broken-images.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
+    "exif-reader": "^2.0.2",
     "lucide-react": "^0.545.0",
     "next": "15.5.4",
     "react": "19.1.0",

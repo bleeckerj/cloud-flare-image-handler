@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cleanString, parseCloudflareMetadata } from '@/utils/cloudflareMetadata';
+import { cleanString, parseCloudflareMetadata, pickCloudflareMetadata } from '@/utils/cloudflareMetadata';
 import { normalizeOriginalUrl } from '@/utils/urlNormalization';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
 
@@ -103,12 +103,12 @@ export async function PATCH(
     }
 
     if (originalUrlProvided) {
-      metadata.originalUrl = cleanOriginalUrl;
-      metadata.originalUrlNormalized = normalizeOriginalUrl(cleanOriginalUrl);
+      metadata.originalUrl = cleanOriginalUrl ?? '';
+      metadata.originalUrlNormalized = normalizeOriginalUrl(cleanOriginalUrl) ?? '';
     }
 
     if (displayNameProvided) {
-      metadata.displayName = cleanDisplayName ?? undefined;
+      metadata.displayName = cleanDisplayName ?? '';
     }
 
     if (parentProvided) {
@@ -119,6 +119,8 @@ export async function PATCH(
       metadata.altTag = cleanAltTag ?? '';
     }
 
+    const metadataPayload = pickCloudflareMetadata(metadata);
+
     // Update image metadata in Cloudflare using JSON body
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/images/v1/${imageId}`,
@@ -128,7 +130,7 @@ export async function PATCH(
           'Authorization': `Bearer ${apiToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ metadata }),
+        body: JSON.stringify({ metadata: metadataPayload }),
       }
     );
 
@@ -142,15 +144,15 @@ export async function PATCH(
       );
     }
 
-    const finalParentId = metadata.variationParentId as string | undefined;
+    const finalParentId = metadataPayload.variationParentId as string | undefined;
 
-    const finalFolder = metadata.folder as string | undefined;
-    const finalTags = Array.isArray(metadata.tags) ? metadata.tags : [];
-    const finalDescription = metadata.description as string | undefined;
-    const finalOriginalUrl = metadata.originalUrl as string | undefined;
+    const finalFolder = metadataPayload.folder as string | undefined;
+    const finalTags = Array.isArray(metadataPayload.tags) ? metadataPayload.tags : [];
+    const finalDescription = metadataPayload.description as string | undefined;
+    const finalOriginalUrl = metadataPayload.originalUrl as string | undefined;
     const finalDisplayName =
-      (metadata.displayName as string | undefined) ?? fetchedImageResult.result.filename;
-    const finalAltTag = metadata.altTag as string | undefined;
+      (metadataPayload.displayName as string | undefined) ?? fetchedImageResult.result.filename;
+    const finalAltTag = metadataPayload.altTag as string | undefined;
 
     upsertCachedImage(
       transformApiImageToCached({
@@ -158,7 +160,7 @@ export async function PATCH(
         filename: fetchedImageResult.result.filename,
         uploaded: fetchedImageResult.result.uploaded,
         variants: fetchedImageResult.result.variants,
-        meta: metadata
+        meta: metadataPayload
       })
     );
 

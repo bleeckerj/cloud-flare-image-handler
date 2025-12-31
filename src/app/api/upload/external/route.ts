@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { transformApiImageToCached, upsertCachedImage } from '@/server/cloudflareImageCache';
 import { findDuplicatesByContentHash, findDuplicatesByOriginalUrl, toDuplicateSummary } from '@/server/duplicateDetector';
 import { normalizeOriginalUrl } from '@/utils/urlNormalization';
+import { extractExifSummary } from '@/utils/exif';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -99,8 +100,10 @@ export async function POST(request: NextRequest) {
     }
 
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const originalBuffer = Buffer.from(bytes);
+    const buffer = originalBuffer;
     const contentHash = computeContentHash(buffer);
+    const exifSummary = await extractExifSummary(originalBuffer);
 
     if (!normalizedOriginalUrl) {
       duplicateMatches = await findDuplicatesByContentHash(contentHash);
@@ -136,6 +139,7 @@ export async function POST(request: NextRequest) {
       originalUrlNormalized: normalizedOriginalUrl,
       contentHash,
       variationParentId: cleanParentId,
+      exif: exifSummary,
     };
 
     const metadata = JSON.stringify(metadataPayload);

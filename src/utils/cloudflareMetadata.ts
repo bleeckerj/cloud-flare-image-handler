@@ -10,10 +10,41 @@ export type CloudflareMetadata = {
   filename?: string;
   variationParentId?: string;
   linkedAssetId?: string;
+  exif?: Record<string, string | number>;
   uploadedAt?: string;
   updatedAt?: string;
   [key: string]: unknown;
 };
+
+export const CLOUDFLARE_METADATA_FIELDS = [
+  'folder',
+  'tags',
+  'description',
+  'originalUrl',
+  'originalUrlNormalized',
+  'contentHash',
+  'altTag',
+  'displayName',
+  'variationParentId',
+  'linkedAssetId',
+  'exif',
+  'updatedAt'
+] as const;
+
+type CloudflareMetadataField = typeof CLOUDFLARE_METADATA_FIELDS[number];
+
+export function pickCloudflareMetadata(
+  meta: Record<string, unknown>
+): CloudflareMetadata {
+  const trimmed: Record<string, unknown> = {};
+  CLOUDFLARE_METADATA_FIELDS.forEach((key) => {
+    const value = meta[key as CloudflareMetadataField];
+    if (value !== undefined) {
+      trimmed[key] = value;
+    }
+  });
+  return trimmed as CloudflareMetadata;
+}
 
 /**
  * Parse the metadata returned by Cloudflare as JSON or object.

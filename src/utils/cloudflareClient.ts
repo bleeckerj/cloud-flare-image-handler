@@ -1,4 +1,4 @@
-import { cleanString, parseCloudflareMetadata } from './cloudflareMetadata';
+import { cleanString, parseCloudflareMetadata, pickCloudflareMetadata } from './cloudflareMetadata';
 
 const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
@@ -69,6 +69,7 @@ export async function updateImageFolder(imageId: string, folder?: string) {
     updatedAt: new Date().toISOString(),
   } as Record<string, unknown>;
   metadata.folder = cleanString(folder);
+  const metadataPayload = pickCloudflareMetadata(metadata);
 
   const patchResp = await apiFetch(
     `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/images/v1/${imageId}`,
@@ -77,7 +78,7 @@ export async function updateImageFolder(imageId: string, folder?: string) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ metadata }),
+      body: JSON.stringify({ metadata: metadataPayload }),
     }
   );
   const patchJson = await patchResp.json();

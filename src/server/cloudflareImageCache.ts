@@ -22,6 +22,7 @@ export interface CachedCloudflareImage {
   contentHash?: string;
   altTag?: string;
   displayName?: string;
+  exif?: Record<string, string | number>;
   parentId?: string;
   linkedAssetId?: string;
 }
@@ -91,6 +92,10 @@ const transformImage = (image: CloudflareImageApiResponse): CachedCloudflareImag
     parsedMeta.contentHash && parsedMeta.contentHash !== 'undefined'
       ? parsedMeta.contentHash
       : undefined;
+  const cleanExif =
+    parsedMeta.exif && typeof parsedMeta.exif === 'object' && !Array.isArray(parsedMeta.exif)
+      ? (parsedMeta.exif as Record<string, string | number>)
+      : undefined;
   const parentId = cleanString(parsedMeta.variationParentId);
   const linkedAssetId = cleanString(parsedMeta.linkedAssetId);
 
@@ -107,6 +112,7 @@ const transformImage = (image: CloudflareImageApiResponse): CachedCloudflareImag
     contentHash: cleanContentHash,
     altTag: cleanAltTag,
     displayName: displayName ?? image.filename || parsedMeta.filename || undefined,
+    exif: cleanExif,
     parentId,
     linkedAssetId
   };

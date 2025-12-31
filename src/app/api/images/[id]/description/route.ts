@@ -99,10 +99,10 @@ export async function POST(
     }
 
     const userText = [
-      'Write a concise description (1-2 short paragraphs) for this image used in a design portfolio CMS. Include relevant details that would help with a search for the image and a description of its content and setting.',
+      'Write a very concise description (1 short paragraphs, fewer than 700 characters) for this image used in a design portfolio CMS. Include relevant details that would help with a search for the image and a description of its content and setting.',
       'If the image presents a familiar object, scene, setting, or person (type of product, interior, landscape, etc.), describe it or them succintly and clearly but avoid generic phrases.',
       'Highlight the subject, objects, brands, text, setting, visual style. Avoid lists, hashtags, or referencing accessibility requirements.',
-      'Return only the description text without markdown or labels.',
+      'Return only the description text without markdown or labels. Return no more than 700 characters',
       contextSegments.length ? `Context:\n${contextSegments.join('\n')}` : null
     ]
       .filter(Boolean)
