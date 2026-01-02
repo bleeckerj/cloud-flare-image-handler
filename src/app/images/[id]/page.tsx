@@ -806,6 +806,24 @@ export default function ImageDetailPage() {
     await persistVariationOrder(nextOrder, nextOrder);
   }, [displayedVariations, image, persistVariationOrder]);
 
+  const handleSortVariationOrder = useCallback(async () => {
+    if (!image || image.parentId) {
+      return;
+    }
+    const nextOrder = [...variationCandidates]
+      .sort((a, b) =>
+        (a.filename || '').localeCompare(b.filename || '', undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        })
+      )
+      .map((child) => child.id);
+    if (!nextOrder.length) {
+      return;
+    }
+    await persistVariationOrder(nextOrder, nextOrder);
+  }, [image, persistVariationOrder, variationCandidates]);
+
   const handleCancelMetadata = useCallback(() => {
     if (!image) {
       return;
@@ -1795,6 +1813,13 @@ export default function ImageDetailPage() {
                           className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                         >
                           Reverse order
+                        </button>
+                        <button
+                          onClick={handleSortVariationOrder}
+                          disabled={variationOrderSaving || !variationCandidates.length}
+                          className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Sort A→Z
                         </button>
                         <button
                           onClick={handleDeleteParent}

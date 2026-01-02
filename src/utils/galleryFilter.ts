@@ -17,6 +17,7 @@ export interface GalleryFilterOptions {
   searchTerm: string;
   onlyCanonical: boolean;
   hiddenFolders?: string[];
+  hiddenTags?: string[];
 }
 
 const normalize = (value?: string) => value?.toLowerCase() ?? '';
@@ -68,17 +69,25 @@ const matchesHiddenFolderFilter = (image: GalleryImage, hiddenFolders?: string[]
   return !hiddenFolders.includes(image.folder);
 };
 
+const matchesHiddenTagFilter = (image: GalleryImage, hiddenTags?: string[]) => {
+  if (!hiddenTags || hiddenTags.length === 0) return true;
+  if (!Array.isArray(image.tags) || image.tags.length === 0) return true;
+  const hiddenSet = new Set(hiddenTags.map(normalize));
+  return !image.tags.some(tag => hiddenSet.has(normalize(tag)));
+};
+
 export const filterImagesForGallery = (
   images: GalleryImage[],
   options: GalleryFilterOptions
 ): GalleryImage[] => {
-  const { selectedFolder, selectedTag, searchTerm, onlyCanonical, hiddenFolders } = options;
+  const { selectedFolder, selectedTag, searchTerm, onlyCanonical, hiddenFolders, hiddenTags } = options;
   return images.filter((image) => {
     if (!matchesFolderFilter(image, selectedFolder)) return false;
     if (!matchesTagFilter(image, selectedTag)) return false;
     if (!matchesSearchFilter(image, searchTerm)) return false;
     if (onlyCanonical && image.parentId) return false;
     if (!matchesHiddenFolderFilter(image, hiddenFolders)) return false;
+    if (!matchesHiddenTagFilter(image, hiddenTags)) return false;
     return true;
   });
 };

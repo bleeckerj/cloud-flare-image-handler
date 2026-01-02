@@ -42,6 +42,7 @@ export interface ImageGalleryRef {
 
 const PAGE_SIZE = 30;
 const HIDDEN_FOLDERS_STORAGE_KEY = 'galleryHiddenFolders';
+const HIDDEN_TAGS_STORAGE_KEY = 'galleryHiddenTags';
 const BROKEN_AUDIT_STORAGE_KEY = 'galleryBrokenAudit';
 const AUDIT_LOG_LIMIT = 200;
 
@@ -88,6 +89,39 @@ const persistHiddenFolders = (folders: string[]) => {
     window.localStorage.setItem(HIDDEN_FOLDERS_STORAGE_KEY, JSON.stringify(folders));
   } catch (error) {
     console.warn('Failed to save hidden folders', error);
+  }
+};
+
+const loadHiddenTagsFromStorage = (): string[] => {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+  try {
+    const storedValue = window.localStorage.getItem(HIDDEN_TAGS_STORAGE_KEY);
+    if (!storedValue) {
+      return [];
+    }
+    const parsed = JSON.parse(storedValue);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((item): item is string => typeof item === 'string')
+        .map(item => item.trim())
+        .filter(Boolean);
+    }
+  } catch (error) {
+    console.warn('Failed to parse hidden tags', error);
+  }
+  return [];
+};
+
+const persistHiddenTags = (tags: string[]) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(HIDDEN_TAGS_STORAGE_KEY, JSON.stringify(tags));
+  } catch (error) {
+    console.warn('Failed to save hidden tags', error);
   }
 };
 
@@ -210,6 +244,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [respectAspectRatio, setRespectAspectRatio] = useState(storedPreferencesRef.current.respectAspectRatio);
   const [onlyWithVariants, setOnlyWithVariants] = useState(storedPreferencesRef.current.onlyWithVariants);
   const [hiddenFolders, setHiddenFolders] = useState<string[]>(() => loadHiddenFoldersFromStorage());
+  const [hiddenTags, setHiddenTags] = useState<string[]>(() => loadHiddenTagsFromStorage());
   const [filtersCollapsed, setFiltersCollapsed] = useState(storedPreferencesRef.current.filtersCollapsed ?? false);
   const [bulkSelectionMode, setBulkSelectionMode] = useState(false);
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set());
@@ -256,6 +291,9 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   useEffect(() => {
     persistHiddenFolders(hiddenFolders);
   }, [hiddenFolders]);
+  useEffect(() => {
+    persistHiddenTags(hiddenTags);
+  }, [hiddenTags]);
   useEffect(() => {
     persistBrokenAudit(brokenAudit);
   }, [brokenAudit]);
@@ -661,6 +699,48 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     return true;
   }, [hiddenFolders]);
 
+  const hideTagByName = useCallback((tagName: string) => {
+    const sanitized = tagName.trim();
+    if (!sanitized) {
+      return false;
+    }
+    const normalized = sanitized.toLowerCase();
+    let added = false;
+    setHiddenTags(prev => {
+      if (prev.some(tag => tag.toLowerCase() === normalized)) {
+        return prev;
+      }
+      added = true;
+      return [...prev, sanitized];
+    });
+    return added;
+  }, []);
+
+  const unhideTagByName = useCallback((tagName: string) => {
+    const sanitized = tagName.trim();
+    if (!sanitized) {
+      return false;
+    }
+    const normalized = sanitized.toLowerCase();
+    let removed = false;
+    setHiddenTags(prev => {
+      if (!prev.some(tag => tag.toLowerCase() === normalized)) {
+        return prev;
+      }
+      removed = true;
+      return prev.filter(tag => tag.toLowerCase() !== normalized);
+    });
+    return removed;
+  }, []);
+
+  const clearHiddenTags = useCallback(() => {
+    if (hiddenTags.length === 0) {
+      return false;
+    }
+    setHiddenTags([]);
+    return true;
+  }, [hiddenTags]);
+
   const selectedCount = selectedImageIds.size;
 
   const toggleSelection = useCallback((imageId: string) => {
@@ -1056,10 +1136,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     [duplicateGroups, toast]
   );
 
-  const uniqueTags = useMemo(
-    () => Array.from(new Set(images.flatMap(img => Array.isArray(img.tags) ? img.tags.filter(tag => tag && tag.trim()) : []))),
-    [images]
-  );
+  const uniqueTags = useMemo(() => {
+    const tags = Array.from(
+      new Set(images.flatMap(img => Array.isArray(img.tags) ? img.tags.filter(tag => tag && tag.trim()) : []))
+    );
+    return tags.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [images]);
 
   const folderFilterOptions = useMemo(
     () => [
@@ -1068,14 +1150,6 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       ...visibleFolders.map(folder => ({ value: folder, label: folder as string }))
     ],
     [visibleFolders]
-  );
-
-  const tagFilterOptions = useMemo(
-    () => [
-      { value: '', label: 'All tags' },
-      ...uniqueTags.map(tag => ({ value: tag as string, label: tag as string }))
-    ],
-    [uniqueTags]
   );
 
   const variantOptions = useMemo(
@@ -1115,9 +1189,10 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       selectedTag,
       searchTerm,
       onlyCanonical,
-      hiddenFolders
+      hiddenFolders,
+      hiddenTags
     });
-  }, [images, selectedFolder, selectedTag, searchTerm, onlyCanonical, hiddenFolders]);
+  }, [images, selectedFolder, selectedTag, searchTerm, onlyCanonical, hiddenFolders, hiddenTags]);
 
   const duplicateFilteredImages = useMemo(() => {
     if (!showDuplicatesOnly) {
@@ -1498,14 +1573,19 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
             <label htmlFor="tag-filter" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
               Tag
             </label>
-            <MonoSelect
+            <input
               id="tag-filter"
+              list="tag-filter-list"
               value={selectedTag}
-              onChange={setSelectedTag}
-              options={tagFilterOptions}
-              className="w-full"
+              onChange={(e) => setSelectedTag(e.target.value)}
               placeholder="All tags"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-[0.7em] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <datalist id="tag-filter-list">
+              {uniqueTags.map(tag => (
+                <option key={tag} value={tag} />
+              ))}
+            </datalist>
           </div>
           <div>
             <label htmlFor="variant-select" className="block text-[0.7em] font-mono font-mono font-medum text-gray-700 mb-1">
@@ -1629,10 +1709,18 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
           <div className="md:col-span-5">
             <GalleryCommandBar
               hiddenFolders={hiddenFolders}
+              hiddenTags={hiddenTags}
               knownFolders={uniqueFolders}
+              knownTags={uniqueTags}
               onHideFolder={hideFolderByName}
               onUnhideFolder={unhideFolderByName}
               onClearHidden={clearHiddenFolders}
+              onHideTag={hideTagByName}
+              onUnhideTag={unhideTagByName}
+              onClearHiddenTags={clearHiddenTags}
+              selectedTag={selectedTag}
+              onSelectTag={setSelectedTag}
+              onClearTagFilter={() => setSelectedTag('')}
               showParentsOnly={onlyWithVariants}
               onSetParentsOnly={setOnlyWithVariants}
               currentPage={pageIndex}
@@ -1656,6 +1744,28 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
                 ))}
                 <button
                   onClick={clearHiddenFolders}
+                  className="ml-auto text-[0.6rem] uppercase tracking-wide text-blue-600 hover:text-blue-700"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+            {hiddenTags.length > 0 && (
+              <div className="md:col-span-5 flex flex-wrap items-center gap-2 p-3 bg-white border border-gray-200 rounded-lg text-[0.65rem] font-mono text-gray-700">
+                <span className="uppercase tracking-wide text-gray-500 text-[0.6rem]">Hidden tags</span>
+                {hiddenTags.map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => unhideTagByName(tag)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-900 text-white hover:bg-black transition"
+                    title="Unhide tag"
+                  >
+                    {tag}
+                    <span aria-hidden="true">×</span>
+                  </button>
+                ))}
+                <button
+                  onClick={clearHiddenTags}
                   className="ml-auto text-[0.6rem] uppercase tracking-wide text-blue-600 hover:text-blue-700"
                 >
                   Clear all
