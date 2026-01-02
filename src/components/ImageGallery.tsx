@@ -228,6 +228,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditProgress, setAuditProgress] = useState({ checked: 0, total: 0 });
   const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([]);
+  const [refreshingCache, setRefreshingCache] = useState(false);
   const utilityButtonClasses = 'text-[0.65rem] font-mono px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 transition';
 
   useEffect(() => {
@@ -333,21 +334,28 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
   // Refresh when refreshTrigger changes
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
-      fetchImages(true); // Silent refresh
+      fetchImages({ silent: true }); // Silent refresh
     }
   }, [refreshTrigger]);
 
   // Expose the refresh function via ref
   useImperativeHandle(ref, () => ({
-    refreshImages: () => fetchImages(true) // Silent refresh for better UX
+    refreshImages: () => fetchImages({ silent: true }) // Silent refresh for better UX
   }));
 
-  const fetchImages = async (silent = false) => {
+  const fetchImages = async ({
+    silent = false,
+    forceRefresh = false
+  }: { silent?: boolean; forceRefresh?: boolean } = {}) => {
     if (!silent) {
       setLoading(true);
     }
+    if (forceRefresh) {
+      setRefreshingCache(true);
+    }
     try {
-      const response = await fetch('/api/images');
+      const url = forceRefresh ? '/api/images?refresh=1' : '/api/images';
+      const response = await fetch(url);
       const data = await response.json();
       if (response.ok) {
         setImages(data.images || []);
@@ -356,10 +364,13 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
       console.error('Failed to fetch images:', error);
     } finally {
       setLoading(false);
+      if (forceRefresh) {
+        setRefreshingCache(false);
+      }
     }
   };
   const handleFoldersChanged = async () => {
-    await fetchImages(true);
+    await fetchImages({ silent: true });
   };
 
   const deleteImage = async (imageId: string) => {
@@ -1146,6 +1157,30 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
     return [...filteredWithVariants].sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
   }, [filteredWithVariants]);
 
+  const hasActiveFilters = Boolean(
+    searchTerm.trim() ||
+    selectedFolder !== 'all' ||
+    selectedTag ||
+    onlyCanonical ||
+    respectAspectRatio ||
+    onlyWithVariants ||
+    showDuplicatesOnly ||
+    showBrokenOnly ||
+    hiddenFolders.length > 0
+  );
+
+  const clearFilters = useCallback(() => {
+    setSearchTerm('');
+    setSelectedFolder('all');
+    setSelectedTag('');
+    setOnlyCanonical(false);
+    setRespectAspectRatio(false);
+    setOnlyWithVariants(false);
+    setShowDuplicatesOnly(false);
+    setShowBrokenOnly(false);
+    setHiddenFolders([]);
+  }, []);
+
   const totalPages = Math.max(1, Math.ceil(sortedImages.length / PAGE_SIZE));
   const pageIndex = Math.min(currentPage, totalPages);
   const pageSliceStart = (pageIndex - 1) * PAGE_SIZE;
@@ -1330,6 +1365,21 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(({ refreshTr
               aria-pressed={!filtersCollapsed}
             >
               {filtersCollapsed ? 'Show filters' : 'Hide filters'}
+            </button>
+            <button
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              className="px-3 py-1 text-[0.7em] font-mono border border-gray-200 rounded-md hover:bg-gray-100 transition disabled:opacity-50"
+            >
+              Clear filters
+            </button>
+            <button
+              onClick={() => fetchImages({ forceRefresh: true })}
+              disabled={refreshingCache}
+              className="px-3 py-1 text-[0.7em] font-mono border border-gray-200 rounded-md hover:bg-gray-100 transition disabled:opacity-50"
+              title="Refresh the server-side Cloudflare cache"
+            >
+              {refreshingCache ? 'Refreshing…' : 'Refresh cache'}
             </button>
             <button
               onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}

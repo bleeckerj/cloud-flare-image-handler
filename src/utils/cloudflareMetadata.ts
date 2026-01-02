@@ -13,6 +13,7 @@ export type CloudflareMetadata = {
   exif?: Record<string, string | number>;
   uploadedAt?: string;
   updatedAt?: string;
+  variationSort?: number;
   [key: string]: unknown;
 };
 
@@ -28,6 +29,7 @@ export const CLOUDFLARE_METADATA_FIELDS = [
   'variationParentId',
   'linkedAssetId',
   'exif',
+  'variationSort',
   'updatedAt'
 ] as const;
 

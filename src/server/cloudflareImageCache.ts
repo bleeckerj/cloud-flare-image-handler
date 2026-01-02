@@ -25,6 +25,7 @@ export interface CachedCloudflareImage {
   exif?: Record<string, string | number>;
   parentId?: string;
   linkedAssetId?: string;
+  variationSort?: number;
 }
 
 interface CacheState {
@@ -96,6 +97,16 @@ const transformImage = (image: CloudflareImageApiResponse): CachedCloudflareImag
     parsedMeta.exif && typeof parsedMeta.exif === 'object' && !Array.isArray(parsedMeta.exif)
       ? (parsedMeta.exif as Record<string, string | number>)
       : undefined;
+  const cleanVariationSort = (() => {
+    if (typeof parsedMeta.variationSort === 'number' && Number.isFinite(parsedMeta.variationSort)) {
+      return parsedMeta.variationSort;
+    }
+    if (typeof parsedMeta.variationSort === 'string') {
+      const parsed = Number(parsedMeta.variationSort);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
+  })();
   const parentId = cleanString(parsedMeta.variationParentId);
   const linkedAssetId = cleanString(parsedMeta.linkedAssetId);
 
@@ -113,6 +124,7 @@ const transformImage = (image: CloudflareImageApiResponse): CachedCloudflareImag
     altTag: cleanAltTag,
     displayName: displayName ?? image.filename || parsedMeta.filename || undefined,
     exif: cleanExif,
+    variationSort: cleanVariationSort,
     parentId,
     linkedAssetId
   };

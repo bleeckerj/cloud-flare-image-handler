@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getMultipleImageUrls, getCloudflareImageUrl } from '@/utils/imageUtils';
 import { useToast } from '@/components/Toast';
-import { Sparkles, RotateCcw, RotateCw } from 'lucide-react';
+import { Sparkles, RotateCcw, RotateCw, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import FolderManagerButton from '@/components/FolderManagerButton';
 import MonoSelect from '@/components/MonoSelect';
 import { cleanString, pickCloudflareMetadata } from '@/utils/cloudflareMetadata';
@@ -31,6 +31,7 @@ interface CloudflareImage {
   exif?: Record<string, string | number>;
   parentId?: string;
   linkedAssetId?: string;
+  variationSort?: number;
 }
 
 const DEFAULT_LIST_VARIANT = 'original';
@@ -112,6 +113,12 @@ export default function ImageDetailPage() {
   const [uniqueFolders, setUniqueFolders] = useState<string[]>([]);
   const [newFolderInput, setNewFolderInput] = useState('');
   const [variantModalState, setVariantModalState] = useState<{ target: CloudflareImage } | null>(null);
+  const [variationOrderOverride, setVariationOrderOverride] = useState<string[] | null>(null);
+  const [variationOrderSaving, setVariationOrderSaving] = useState(false);
+  const [draggingVariationId, setDraggingVariationId] = useState<string | null>(null);
+  const [dragOverVariationId, setDragOverVariationId] = useState<string | null>(null);
+  const [selectedVariationIds, setSelectedVariationIds] = useState<Set<string>>(() => new Set());
+  const [variationAltLoadingMap, setVariationAltLoadingMap] = useState<Record<string, boolean>>({});
   const [previewRotation, setPreviewRotation] = useState(0);
   const [rotationLoading, setRotationLoading] = useState(false);
   const [rotationError, setRotationError] = useState<string | null>(null);
@@ -211,9 +218,55 @@ export default function ImageDetailPage() {
     );
   }, [allImages, image?.parentId, image?.id]);
 
-  const displayedVariations = useMemo(() => {
+  const variationCandidates = useMemo(() => {
     return image?.parentId ? siblingVariations : variationChildren;
   }, [image?.parentId, siblingVariations, variationChildren]);
+
+  const parentImage = useMemo(() => {
+    if (!image?.parentId) return null;
+    return allImages.find((img) => img.id === image.parentId) || null;
+  }, [allImages, image?.parentId]);
+
+  const displayedVariations = useMemo(() => {
+    if (!variationCandidates.length) {
+      return [];
+    }
+    const baseIndex = new Map(variationCandidates.map((child, index) => [child.id, index]));
+    const hasSort = variationCandidates.some((child) => Number.isFinite(child.variationSort));
+    const baseOrdered = hasSort
+      ? [...variationCandidates].sort((a, b) => {
+          const aSort = Number.isFinite(a.variationSort) ? (a.variationSort as number) : null;
+          const bSort = Number.isFinite(b.variationSort) ? (b.variationSort as number) : null;
+          if (aSort === null && bSort === null) {
+            return (baseIndex.get(a.id) ?? 0) - (baseIndex.get(b.id) ?? 0);
+          }
+          if (aSort === null) return 1;
+          if (bSort === null) return -1;
+          if (aSort !== bSort) return aSort - bSort;
+          return (baseIndex.get(a.id) ?? 0) - (baseIndex.get(b.id) ?? 0);
+        })
+      : variationCandidates;
+
+    if (!variationOrderOverride || variationOrderOverride.length === 0) {
+      return baseOrdered;
+    }
+
+    const orderedMap = new Map(baseOrdered.map((item) => [item.id, item]));
+    const ordered: CloudflareImage[] = [];
+    variationOrderOverride.forEach((variationId) => {
+      const candidate = orderedMap.get(variationId);
+      if (candidate) {
+        ordered.push(candidate);
+        orderedMap.delete(variationId);
+      }
+    });
+    baseOrdered.forEach((candidate) => {
+      if (orderedMap.has(candidate.id)) {
+        ordered.push(candidate);
+      }
+    });
+    return ordered;
+  }, [variationCandidates, variationOrderOverride]);
 
   const pagedVariations = useMemo(() => {
     const start = (variationPage - 1) * VARIATION_PAGE_SIZE;
@@ -224,11 +277,6 @@ export default function ImageDetailPage() {
     1,
     Math.ceil(displayedVariations.length / VARIATION_PAGE_SIZE)
   );
-
-  const parentImage = useMemo(() => {
-    if (!image?.parentId) return null;
-    return allImages.find((img) => img.id === image.parentId) || null;
-  }, [allImages, image?.parentId]);
 
   const parentWithChildren = useMemo(() => {
     const set = new Set<string>();
@@ -372,6 +420,115 @@ export default function ImageDetailPage() {
   const isChildImage = Boolean(image?.parentId);
   const hasVariations = !isChildImage && variationChildren.length > 0;
   const variationCount = displayedVariations.length;
+  const hasMissingVariationSort = useMemo(() => {
+    return variationCandidates.some((child) => !Number.isFinite(child.variationSort));
+  }, [variationCandidates]);
+  const variationOrderIndex = useMemo(() => {
+    return new Map(displayedVariations.map((child, index) => [child.id, index]));
+  }, [displayedVariations]);
+  const selectedVariationCount = selectedVariationIds.size;
+  const variationAltBusy = useMemo(
+    () => Object.keys(variationAltLoadingMap).length > 0,
+    [variationAltLoadingMap]
+  );
+  const isMetadataDirty = useMemo(() => {
+    if (!image) {
+      return false;
+    }
+    const finalFolder = folderSelect === '__create__'
+      ? cleanString(newFolderInput) ?? ''
+      : cleanString(folderSelect) ?? '';
+    const imageFolder = cleanString(image.folder) ?? '';
+    if (finalFolder !== imageFolder) {
+      return true;
+    }
+    const inputTags = tagsInput
+      ? tagsInput.split(',').map((tag) => tag.trim()).filter(Boolean)
+      : [];
+    const imageTags = Array.isArray(image.tags) ? image.tags : [];
+    const normalizeTags = (tags: string[]) => [...tags].map((tag) => tag.trim()).filter(Boolean).sort();
+    const normalizedInputTags = normalizeTags(inputTags);
+    const normalizedImageTags = normalizeTags(imageTags);
+    if (normalizedInputTags.length !== normalizedImageTags.length) {
+      return true;
+    }
+    for (let i = 0; i < normalizedInputTags.length; i += 1) {
+      if (normalizedInputTags[i] !== normalizedImageTags[i]) {
+        return true;
+      }
+    }
+    const descriptionValue = descriptionInput ?? '';
+    const imageDescription = image.description ?? '';
+    if (descriptionValue !== imageDescription) {
+      return true;
+    }
+    const originalValue = cleanString(originalUrlInput) ?? '';
+    const imageOriginal = cleanString(image.originalUrl) ?? '';
+    if (originalValue !== imageOriginal) {
+      return true;
+    }
+    const displayNameValue = cleanString(displayNameInput) ?? '';
+    const imageDisplayName = cleanString(image.displayName || image.filename) ?? '';
+    if (displayNameValue !== imageDisplayName) {
+      return true;
+    }
+    const altValue = cleanString(altTextInput) ?? '';
+    const imageAlt = cleanString(image.altTag) ?? '';
+    if (altValue !== imageAlt) {
+      return true;
+    }
+    return false;
+  }, [
+    altTextInput,
+    descriptionInput,
+    displayNameInput,
+    folderSelect,
+    image,
+    newFolderInput,
+    originalUrlInput,
+    tagsInput
+  ]);
+  const pendingAutoSave = useMemo(
+    () =>
+      saving ||
+      variationOrderSaving ||
+      childUploadLoading ||
+      bulkAltApplying ||
+      bulkDescriptionApplying ||
+      descriptionGenerating ||
+      Object.keys(altLoadingMap).length > 0 ||
+      variationAltBusy,
+    [
+      altLoadingMap,
+      bulkAltApplying,
+      bulkDescriptionApplying,
+      childUploadLoading,
+      descriptionGenerating,
+      saving,
+      variationAltBusy,
+      variationOrderSaving
+    ]
+  );
+
+  useEffect(() => {
+    setVariationOrderOverride(null);
+    setSelectedVariationIds(new Set());
+  }, [image?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (!isMetadataDirty && !pendingAutoSave) {
+      return;
+    }
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isMetadataDirty, pendingAutoSave]);
 
   const detailFolderOptions = useMemo(
     () => [
@@ -555,12 +712,251 @@ export default function ImageDetailPage() {
     }
     const buildEntry = (img: CloudflareImage) => ({
       url: ensureWebpFormat(getCloudflareImageUrl(img.id, DEFAULT_LIST_VARIANT)),
-      altText: img.description || ''
+      altText: img.altTag || ''
     });
     const entries = [buildEntry(image), ...displayedVariations.map(buildEntry)];
     const payload = formatEntriesAsYaml(entries);
     await copyToClipboard(payload, undefined, 'Variant list copied');
   }, [copyToClipboard, displayedVariations, image]);
+
+  const persistVariationOrder = useCallback(
+    async (nextOrder: string[], changedIds: string[]) => {
+      if (!image) {
+        return;
+      }
+      setVariationOrderOverride(nextOrder);
+      setVariationOrderSaving(true);
+      try {
+        const indexById = new Map(nextOrder.map((idValue, index) => [idValue, index]));
+        const idsToUpdate = hasMissingVariationSort ? nextOrder : changedIds;
+        const uniqueIds = Array.from(new Set(idsToUpdate));
+        await Promise.all(
+          uniqueIds.map((updateId) =>
+            fetch(`/api/images/${updateId}/update`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ variationSort: indexById.get(updateId) ?? 0 })
+            }).then(async (response) => {
+              if (!response.ok) {
+                const payload = await response.json();
+                throw new Error(payload.error || 'Failed to update variation order');
+              }
+            })
+          )
+        );
+        const updateMap = new Map(uniqueIds.map((entry) => [entry, indexById.get(entry)]));
+        setAllImages((prev) =>
+          prev.map((img) =>
+            updateMap.has(img.id)
+              ? { ...img, variationSort: updateMap.get(img.id) }
+              : img
+          )
+        );
+        setVariationOrderOverride(null);
+        toast.push('Variation order updated');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to update variation order';
+        setVariationOrderOverride(null);
+        toast.push(message);
+      } finally {
+        setVariationOrderSaving(false);
+      }
+    },
+    [hasMissingVariationSort, image, toast]
+  );
+
+  const handleMoveVariation = useCallback(
+    async (childId: string, direction: -1 | 1) => {
+      if (!image || image.parentId) {
+        return;
+      }
+      const currentOrder = displayedVariations.map((child) => child.id);
+      const currentIndex = currentOrder.indexOf(childId);
+      const targetIndex = currentIndex + direction;
+      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= currentOrder.length) {
+        return;
+      }
+      const nextOrder = [...currentOrder];
+      [nextOrder[currentIndex], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[currentIndex]];
+      const changedIds = [nextOrder[currentIndex], nextOrder[targetIndex]];
+      await persistVariationOrder(nextOrder, changedIds);
+    },
+    [displayedVariations, image, persistVariationOrder]
+  );
+
+  const handleResetVariationOrder = useCallback(async () => {
+    if (!image || image.parentId) {
+      return;
+    }
+    const nextOrder = variationCandidates.map((child) => child.id);
+    if (!nextOrder.length) {
+      return;
+    }
+    await persistVariationOrder(nextOrder, nextOrder);
+  }, [image, persistVariationOrder, variationCandidates]);
+
+  const handleReverseVariationOrder = useCallback(async () => {
+    if (!image || image.parentId) {
+      return;
+    }
+    const nextOrder = displayedVariations.map((child) => child.id).reverse();
+    if (!nextOrder.length) {
+      return;
+    }
+    await persistVariationOrder(nextOrder, nextOrder);
+  }, [displayedVariations, image, persistVariationOrder]);
+
+  const handleCancelMetadata = useCallback(() => {
+    if (!image) {
+      return;
+    }
+    setFolderSelect(image.folder || '');
+    setNewFolderInput('');
+    setTagsInput(image.tags ? image.tags.join(', ') : '');
+    setDescriptionInput(image.description || '');
+    setAltTextInput(image.altTag || '');
+    setOriginalUrlInput(image.originalUrl || '');
+    setDisplayNameInput(image.displayName || image.filename || '');
+  }, [image]);
+
+  const handleSaveMetadata = useCallback(async () => {
+    if (!image || !id) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const finalFolder = folderSelect === '__create__'
+        ? (newFolderInput.trim() || undefined)
+        : (folderSelect === '' ? undefined : folderSelect);
+      const cleanedOriginalUrl = cleanString(originalUrlInput);
+      const payload = {
+        folder: finalFolder,
+        tags: tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
+        description: descriptionInput,
+        originalUrl: cleanedOriginalUrl ?? '',
+        displayName: cleanString(displayNameInput) ?? '',
+        altTag: cleanString(altTextInput) ?? '',
+      };
+      const res = await fetch(`/api/images/${id}/update`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json() as CloudflareImage;
+      if (res.ok) {
+        toast.push('Metadata updated');
+        setImage(prev => prev ? ({ ...prev, folder: body.folder, tags: body.tags, description: body.description, originalUrl: body.originalUrl, displayName: body.displayName, altTag: body.altTag }) : prev);
+        await refreshImageList();
+      } else {
+        toast.push(body.error || 'Failed to update metadata');
+      }
+    } catch (err) {
+      console.error('Update failed', err);
+      toast.push('Failed to update metadata');
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    altTextInput,
+    descriptionInput,
+    displayNameInput,
+    folderSelect,
+    id,
+    image,
+    newFolderInput,
+    originalUrlInput,
+    refreshImageList,
+    tagsInput,
+    toast
+  ]);
+
+  const toggleVariationSelection = useCallback((variationId: string) => {
+    setSelectedVariationIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(variationId)) {
+        next.delete(variationId);
+      } else {
+        next.add(variationId);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAllVariationsOnPage = useCallback(() => {
+    setSelectedVariationIds((prev) => {
+      const next = new Set(prev);
+      pagedVariations.forEach((child) => next.add(child.id));
+      return next;
+    });
+  }, [pagedVariations]);
+
+  const clearVariationSelection = useCallback(() => {
+    setSelectedVariationIds(new Set());
+  }, []);
+
+  const generateAltForSelectedVariations = useCallback(async () => {
+    const ids = Array.from(selectedVariationIds);
+    if (ids.length === 0) {
+      toast.push('Select at least one variation');
+      return;
+    }
+    setVariationAltLoadingMap((prev) => {
+      const next = { ...prev };
+      ids.forEach((idValue) => {
+        next[idValue] = true;
+      });
+      return next;
+    });
+    let updatedCount = 0;
+    try {
+      for (const idValue of ids) {
+        const response = await fetch(`/api/images/${idValue}/alt`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data?.altTag) {
+          continue;
+        }
+        updatedCount += 1;
+        setAllImages((prev) =>
+          prev.map((img) => (img.id === idValue ? { ...img, altTag: data.altTag } : img))
+        );
+        setImage((prev) => (prev?.id === idValue ? { ...prev, altTag: data.altTag } : prev));
+      }
+      toast.push(updatedCount ? `ALT text generated for ${updatedCount} variation(s)` : 'No ALT text generated');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate ALT text';
+      toast.push(message);
+    } finally {
+      setVariationAltLoadingMap((prev) => {
+        const next = { ...prev };
+        ids.forEach((idValue) => {
+          delete next[idValue];
+        });
+        return next;
+      });
+    }
+  }, [selectedVariationIds, toast]);
+
+  const handleDropVariation = useCallback(
+    async (targetId: string) => {
+      if (!draggingVariationId || draggingVariationId === targetId) {
+        return;
+      }
+      const currentOrder = displayedVariations.map((child) => child.id);
+      const fromIndex = currentOrder.indexOf(draggingVariationId);
+      const toIndex = currentOrder.indexOf(targetId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
+      const nextOrder = [...currentOrder];
+      nextOrder.splice(fromIndex, 1);
+      nextOrder.splice(toIndex, 0, draggingVariationId);
+      const minIndex = Math.min(fromIndex, toIndex);
+      const maxIndex = Math.max(fromIndex, toIndex);
+      const changedIds = nextOrder.slice(minIndex, maxIndex + 1);
+      await persistVariationOrder(nextOrder, changedIds);
+    },
+    [displayedVariations, draggingVariationId, persistVariationOrder]
+  );
 
   const patchParentAssignment = useCallback(
     async (targetId: string, parentIdValue: string) => {
@@ -1058,10 +1454,29 @@ export default function ImageDetailPage() {
           </div>
 
           <div id="image-metadata-section" className="space-y-4">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[11px] font-mono text-gray-700 bg-gray-100 border border-gray-200 rounded-full px-3 py-1">
                 Metadata: {metadataByteSize} bytes
               </span>
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className={`px-2 py-1 rounded-full border ${isMetadataDirty ? 'border-amber-300 bg-amber-50 text-amber-800' : pendingAutoSave ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                  {isMetadataDirty ? 'Unsaved changes' : pendingAutoSave ? 'Saving…' : 'All changes saved'}
+                </span>
+                <button
+                  onClick={handleCancelMetadata}
+                  disabled={!isMetadataDirty || saving}
+                  className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={handleSaveMetadata}
+                  disabled={!isMetadataDirty || saving}
+                  className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                >
+                  {saving ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
             </div>
             <div id="description-section">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1368,6 +1783,20 @@ export default function ImageDetailPage() {
                           Copy list
                         </button>
                         <button
+                          onClick={handleResetVariationOrder}
+                          disabled={variationOrderSaving || !variationCandidates.length}
+                          className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Reset order
+                        </button>
+                        <button
+                          onClick={handleReverseVariationOrder}
+                          disabled={variationOrderSaving || !variationCandidates.length}
+                          className="px-2 py-1 text-[11px] border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Reverse order
+                        </button>
+                        <button
                           onClick={handleDeleteParent}
                           className="px-2 py-1 text-[11px] border border-red-300 rounded-md text-red-600 hover:bg-red-50"
                         >
@@ -1386,12 +1815,99 @@ export default function ImageDetailPage() {
                   </p>
                 ) : (
                   <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-600">
+                      <span>{selectedVariationCount} selected</span>
+                      <button
+                        onClick={selectAllVariationsOnPage}
+                        className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50"
+                      >
+                        Select page
+                      </button>
+                      <button
+                        onClick={clearVariationSelection}
+                        className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        onClick={generateAltForSelectedVariations}
+                        disabled={variationAltBusy || selectedVariationCount === 0}
+                        className="px-2 py-1 border border-gray-300 rounded text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                      >
+                        {variationAltBusy ? 'Generating ALT…' : 'Generate ALT'}
+                      </button>
+                    </div>
                     {pagedVariations.map((child) => (
                       <div
                         key={child.id}
-                        className="flex items-center gap-4 border border-gray-200 rounded-lg p-3 relative"
+                        className={`flex items-center gap-4 border border-gray-200 rounded-lg p-3 relative ${dragOverVariationId === child.id ? 'bg-blue-50 border-blue-200' : ''}`}
                         onMouseLeave={handleThumbLeave}
+                        draggable={!isChildImage}
+                        onDragStart={(event) => {
+                          if (isChildImage) return;
+                          setDraggingVariationId(child.id);
+                          event.dataTransfer.effectAllowed = 'move';
+                          event.dataTransfer.setData('text/plain', child.id);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingVariationId(null);
+                          setDragOverVariationId(null);
+                        }}
+                        onDragOver={(event) => {
+                          if (isChildImage) return;
+                          event.preventDefault();
+                          setDragOverVariationId(child.id);
+                        }}
+                        onDrop={async (event) => {
+                          if (isChildImage) return;
+                          event.preventDefault();
+                          await handleDropVariation(child.id);
+                          setDraggingVariationId(null);
+                          setDragOverVariationId(null);
+                        }}
                       >
+                        {(() => {
+                          if (isChildImage) {
+                            return null;
+                          }
+                          const orderIndex = variationOrderIndex.get(child.id) ?? -1;
+                          const canMoveUp = orderIndex > 0;
+                          const canMoveDown = orderIndex >= 0 && orderIndex < displayedVariations.length - 1;
+                          return (
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={() => handleMoveVariation(child.id, -1)}
+                                disabled={variationOrderSaving || !canMoveUp}
+                                className="p-1 border rounded text-gray-600 hover:bg-gray-100 disabled:opacity-30"
+                                title="Move up"
+                                aria-label="Move variation up"
+                              >
+                                <ChevronUp className="h-3 w-3" />
+                              </button>
+                              <button
+                                onClick={() => handleMoveVariation(child.id, 1)}
+                                disabled={variationOrderSaving || !canMoveDown}
+                                className="p-1 border rounded text-gray-600 hover:bg-gray-100 disabled:opacity-30"
+                                title="Move down"
+                                aria-label="Move variation down"
+                              >
+                                <ChevronDown className="h-3 w-3" />
+                              </button>
+                              <div className="mt-1 flex items-center justify-center text-gray-400">
+                                <GripVertical className="h-3 w-3" />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        <label className="flex items-center gap-2 text-xs text-gray-500">
+                          <input
+                            type="checkbox"
+                            checked={selectedVariationIds.has(child.id)}
+                            onChange={() => toggleVariationSelection(child.id)}
+                            className="h-3 w-3 text-blue-600 border-gray-300 rounded"
+                          />
+                          select
+                        </label>
                         <Link
                           href={`/images/${child.id}`}
                           className="w-32 h-24 relative rounded overflow-hidden bg-gray-100 block"
@@ -1412,6 +1928,9 @@ export default function ImageDetailPage() {
                             Uploaded {new Date(child.uploaded).toLocaleDateString()}
                           </p>
                           <AspectRatioDisplay imageId={child.id} />
+                          <div className="text-[11px] text-gray-500 break-words">
+                            ALT: {child.altTag || '—'}
+                          </div>
                           <button
                             onClick={() => setVariantModalState({ target: child })}
                             className="inline-flex items-center gap-1 text-xs text-blue-600 underline"
@@ -1612,15 +2131,7 @@ export default function ImageDetailPage() {
 
         <div className="flex justify-end gap-3 mt-4">
           <button
-            onClick={() => {
-              setFolderSelect(image.folder || '');
-              setNewFolderInput('');
-              setTagsInput(image.tags ? image.tags.join(', ') : '');
-              setDescriptionInput(image.description || '');
-              setAltTextInput(image.altTag || '');
-              setOriginalUrlInput(image.originalUrl || '');
-              setDisplayNameInput(image.displayName || image.filename || '');
-            }}
+            onClick={handleCancelMetadata}
             className="px-4 py-2 text-xs text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
           >
             Cancel
@@ -1633,41 +2144,7 @@ export default function ImageDetailPage() {
             Delete image
           </button>
           <button
-            onClick={async () => {
-              setSaving(true);
-              try {
-                const finalFolder = folderSelect === '__create__'
-                  ? (newFolderInput.trim() || undefined)
-                  : (folderSelect === '' ? undefined : folderSelect);
-                const cleanedOriginalUrl = cleanString(originalUrlInput);
-                const payload = {
-                  folder: finalFolder,
-                  tags: tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
-                  description: descriptionInput,
-                  originalUrl: cleanedOriginalUrl ?? '',
-                  displayName: cleanString(displayNameInput) ?? '',
-                  altTag: cleanString(altTextInput) ?? '',
-                };
-                const res = await fetch(`/api/images/${id}/update`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(payload),
-                });
-                const body = await res.json() as CloudflareImage;
-                if (res.ok) {
-                  toast.push('Metadata updated');
-                  setImage(prev => prev ? ({ ...prev, folder: body.folder, tags: body.tags, description: body.description, originalUrl: body.originalUrl, displayName: body.displayName, altTag: body.altTag }) : prev);
-                  await refreshImageList();
-                } else {
-                  toast.push(body.error || 'Failed to update metadata');
-                }
-              } catch (err) {
-                console.error('Update failed', err);
-                toast.push('Failed to update metadata');
-              } finally {
-                setSaving(false);
-              }
-            }}
+            onClick={handleSaveMetadata}
             className="px-4 py-2 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             disabled={saving}
           >
